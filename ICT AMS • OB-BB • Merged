@@ -1,0 +1,2966 @@
+// This Pine Script® code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © ssinsan680
+
+//@version=6
+indicator("ICT AMS + Pure Price Action OB/BB — Merged (Safe)", "ICT AMS • OB/BB • Merged", overlay=true,
+     max_labels_count=500, max_boxes_count=500, max_lines_count=500, max_bars_back=5000, dynamic_requests=true)
+
+
+
+//======================================================================================================================
+// 0) 공통 디스플레이
+//======================================================================================================================
+display  = display.all - display.status_line
+
+//===============================================================================`=======================================
+// 1) AMS (현행 스크립트 원형 유지)
+//    ——— 원본과 동일. 변수 접두 부여, 알람 블록 포함. (내용은 사용자가 제공한 '현재 스크립트'를 그대로 사용)
+//======================================================================================================================
+
+//------------------------------------- Settings : ST/IT/LT ------------------------------------------------------------
+stGroup = 'Short Term Structures'
+stSwings = input.string('Disabled', 'Swings', options = ['⦁', 'ST(H/L)', 'Disabled'], inline = 'NA', group = stGroup, display = display)
+stSwingsSZ  = input.string('Tiny', 'Size', options = ['Tiny', 'Small', 'Normal', 'Large'], inline = 'NA', group = stGroup, display = display)
+stMarketStructures = input.bool(true, 'Market Structures', group = stGroup)
+stMSSweepT = input.string('Enabled', '  Market Structure Validation', options = ['Enabled', 'Disabled'], group = stGroup, display = display), stMSSweep = stMSSweepT == 'Enabled'
+stMSTextT = input.string('Enabled', '  Market Structure Labels', options = ['Enabled', 'Disabled'], group = stGroup, display = display), stMSText = stMSTextT == 'Enabled'
+stMSLineStyle = input.string('Dotted', '  Line Style', options = ['Solid', 'Dashed', 'Dotted'], group = stGroup, inline = 'LN', display = display)
+stMSLineWidth = input.int(1, 'Width', minval = 1, group = stGroup, inline = 'LN', display = display)
+stBullMSColor = input.color(#089981, 'Swing and Line Colors, Bullish', group = stGroup, inline = 'MS')
+stBearMSColor = input.color(#f23645, 'Bearish', group = stGroup, inline = 'MS')
+
+itGroup = 'Intermediate Term Structures'
+itSwings = input.string('Disabled', 'Swings', options = ['◈', '△▽', 'IT(H/L)', 'Disabled'], inline = 'NA', group = itGroup, display = display)
+itSwingsSZ  = input.string('Small', 'Size', options = ['Tiny', 'Small', 'Normal', 'Large'], inline = 'NA', group = itGroup, display = display)
+itMarketStructures = input.bool(true, 'Market Structures', group = itGroup)
+itMSSweepT = input.string('Enabled', '  Market Structure Validation', options = ['Enabled', 'Disabled'], group = itGroup, display = display), itMSSweep = itMSSweepT == 'Enabled'
+itMSTextT = input.string('Enabled', '  Market Structure Labels', options = ['Enabled', 'Disabled'], group = itGroup, display = display), itMSText = itMSTextT == 'Enabled'
+itMSLineStyle = input.string('Dashed', '  Line Style', options = ['Solid', 'Dashed', 'Dotted'], group = itGroup, inline = 'LN', display = display)
+itMSLineWidth = input.int(1, 'Width', minval = 1, group = itGroup, inline = 'LN', display = display)
+itBullMSColor = input.color(#089981, 'Swing and Line Colors, Bullish', group = itGroup, inline = 'MS')
+itBearMSColor = input.color(#f23645, 'Bearish', group = itGroup, inline = 'MS')
+
+ltGroup = 'Long Term Structures'
+ltSwings = input.string('◉', 'Swings', options = ['◉', '▲▼', 'LT(H/L)', 'Disabled'], inline = 'NA', group = ltGroup, display = display)
+ltSwingsSZ  = input.string('Small', 'Size', options = ['Tiny', 'Small', 'Normal', 'Large'], inline = 'NA', group = ltGroup, display = display)
+ltMarketStructures = input.bool(true, 'Market Structures', group = ltGroup)
+ltMSSweepT = input.string('Enabled', '  Market Structure Validation', options = ['Enabled', 'Disabled'], group = ltGroup, display = display), ltMSSweep = ltMSSweepT == 'Enabled'
+ltMSTextT = input.string('Enabled', '  Market Structure Labels', options = ['Enabled', 'Disabled'], group = ltGroup, display = display), ltMSText = ltMSTextT == 'Enabled'
+ltMSLineStyle = input.string('Solid', '  Line Style', options = ['Solid', 'Dashed', 'Dotted'], group = ltGroup, inline = 'LN', display = display)
+ltMSLineWidth = input.int(1, 'Width', minval = 1, group = ltGroup, inline = 'LN', display = display)
+ltBullMSColor = input.color(#089981, 'Swing and Line Colors, Bullish', group = ltGroup, inline = 'MS')
+ltBearMSColor = input.color(#f23645, 'Bearish', group = ltGroup, inline = 'MS')
+// === PATCH[AMS:sweep_confirm_modes] ===
+group_ams2 = "AMS • Confirm/Sweep Modes"
+ams_confirm_mode = input.string("Close+Dev (legacy)", "Confirm mode",
+     options=["Close+Dev (legacy)", "CloseBreak + DevFilter"], group=group_ams2)
+
+ams_sweep_mode = input.string("Legacy(close outside dev)", "Sweep mode",
+     options=["Legacy(close outside dev)", "Wick sweep (ICT)"], group=group_ams2)
+
+ams_sweep_k1 = input.float(0.10, "Wick sweep buf1 (k*dev)", minval=0.0, step=0.05, group=group_ams2)
+ams_sweep_k2 = input.float(0.05, "Wick sweep buf2 (k*dev)", minval=0.0, step=0.05, group=group_ams2)
+
+group_adapt = "Adaptive ATR (Learning)"
+use_adapt   = input.bool(true,  "Use Adaptive 'ATR'", group = group_adapt)
+er_len      = input.int(10,     "Efficiency Ratio Length", minval=2, group = group_adapt)
+ewma_len    = input.int(20,     "EWMA Length (returns)",   minval=2, group = group_adapt)
+atr_len_st  = input.int(17,     "ST Base ATR",             minval=1, group = group_adapt)
+atr_len_it  = input.int(34,     "IT Base ATR",             minval=1, group = group_adapt)
+atr_len_lt  = input.int(55,     "LT Base ATR",             minval=1, group = group_adapt)
+mult_narrow = input.float(0.9,  "ER Narrow Mult",          minval=0.1, group = group_adapt)
+mult_wide   = input.float(1.8,  "ER Wide Mult",            minval=0.1, group = group_adapt)
+use_learn   = input.bool(true,  "Online Weight Learning",  group = group_adapt)
+learn_rate  = input.float(0.05, "Learning Rate η",         minval=0.0, step=0.01, group = group_adapt)
+w0_atr      = input.float(1,    "Init w_ATR",              minval=0.0, group = group_adapt)
+w0_par      = input.float(1,    "Init w_Parkinson",        minval=0.0, group = group_adapt)
+w0_gk       = input.float(1,    "Init w_GK",               minval=0.0, group = group_adapt)
+w0_rs       = input.float(1,    "Init w_RS",               minval=0.0, group = group_adapt)
+w0_ewma     = input.float(1,    "Init w_EWMA",             minval=0.0, group = group_adapt)
+// === ANCHOR[RLS:inputs] — place RIGHT AFTER the group_adapt block ===
+group_rls   = "Adaptive Dev Blending — RLS"
+use_rls     = input.bool(true, "Use Diagonal-RLS (replaces Hedge)", group=group_rls)
+rls_lambda  = input.float(0.98, "RLS Forget λ", minval=0.90, maxval=1.0, step=0.01, group=group_rls)
+rls_p0      = input.float(10.0, "Init variance P0 (per weight)", minval=0.1, step=0.1, group=group_rls)
+// === PATCH[RLS:norm_x] ===
+rls_norm_x = input.bool(true, "RLS normalize x by TR (stable)", group=group_rls)
+// === PATCH[RLS:strict_diag] ===
+rls_strict_diag = input.bool(true, "RLS strict diag denom (Σ x²P)", group=group_rls)
+
+//======================================================================================================================
+// 1) ATE input
+//======================================================================================================================
+// ANCHOR[ATE:inputs]
+group_ate      = "Adaptive Targeting Engine (TP/SL)"
+use_ate        = input.bool(true,  "Enable ATE (TP/SL prediction)", group=group_ate)
+ate_scope_dev     = input.string("Long Term",        "ATE Dev Scope",    options=["Short Term","Intermediate Term","Long Term"], group=group_ate)
+ate_scope_regime  = input.string("Intermediate Term","ATE Regime Scope", options=["Short Term","Intermediate Term","Long Term"], group=group_ate)
+ate_scope_ob_side = input.string("Long Term", "ATE OB Side Scope",  options=["Short Term","Intermediate Term","Long Term"],     group=group_ate)
+ate_scope      = input.string("Long Term", "Structure Scope", options=["Short Term","Intermediate Term","Long Term"], group=group_ate)
+ate_horizon    = input.int(240, "Max Horizon (bars)", minval=10, group=group_ate)
+ate_candidates = input.int(5,   "Max Candidates to Score", minval=1, maxval=10, group=group_ate)
+ate_lambda     = input.float(0.25, "Distance Decay λ", minval=0.0, step=0.05, group=group_ate)
+ate_min_p      = input.float(0.55, "Min Prob. to Arm Target", minval=0.0, maxval=1.0, step=0.01, group=group_ate)
+sl_mode        = input.string("Structure+Dev", "SL Policy", options=["Structure+Dev","PureDev"], group=group_ate)
+sl_k           = input.float(1.25, "Dev Cushion (k)", minval=0.0, step=0.05, group=group_ate)
+// === PATCH[ATE:arm_on_touch_inputs] ===
+group_arm = "ATE • Arm Condition"
+ate_arm_on_touch  = input.bool(true, "Arm only when price touches/enters an OB/BB", group=group_arm)
+ate_touch_scan    = input.int(20, "Touch scan OB count (per side)", minval=5, maxval=100, group=group_arm)
+ate_touch_buf_k   = input.float(0.15, "Touch buffer k*dev", minval=0.0, step=0.05, group=group_arm)
+// === PATCH[ATE:touch_dir_filter_input] ===
+ate_touch_dir_filter = input.bool(true, "Arm-touch must match direction (Long:+1 / Short:-1)", group=group_arm)
+
+// === ATE+Bandit advanced inputs ===
+group_bandit     = "ATE • Contextual Bandit"
+use_bandit       = input.bool(true,  "Enable Bandit TP Selection", group=group_bandit)
+bandit_mode      = input.string("TS+UCB", "Mode", options=["TS","UCB","TS+UCB"], group=group_bandit)
+ucb_c            = input.float(0.75, "UCB guard c",  minval=0, step=0.05, group=group_bandit)
+gamma_decay      = input.float(0.995, "Exponential Forgetting γ", minval=0.90, maxval=1.0, step=0.001, group=group_bandit)
+decay_period     = input.int(50, "Decay every N bars", minval=5, group=group_bandit)
+// === PATCH[Bandit:regime_inputs] — 레짐 분리 옵션 추가
+use_regime_bandit = input.bool(true, "Regime-split tables (trend vs chop)", group=group_bandit)
+reg_trend_hi      = input.float(0.70, "Regime: trend if p_trend ≥", minval=0.50, maxval=1.0, step=0.05, group=group_bandit)
+reg_chop_lo       = input.float(0.30, "Regime: chop if p_trend ≤",  minval=0.00, maxval=0.50, step=0.05, group=group_bandit)
+// === PATCH B-1: SRF Inputs ===
+group_srf = "ATE • Sticky Regime Filter (SRF)"
+use_srf        = input.bool(true,  "Enable SRF (trend vs. chop)", group=group_srf)
+srf_sigma_tr   = input.float(0.015, "σ_trend  (returns)", minval=0.001, step=0.001, group=group_srf)
+srf_sigma_ch   = input.float(0.006, "σ_chop   (returns)", minval=0.001, step=0.001, group=group_srf)
+srf_stick      = input.float(0.96,  "State stickiness φ (stay prob.)", minval=0.8, maxval=0.995, step=0.01, group=group_srf)
+srf_gate       = input.float(0.08,  "Extra cut when 'chop' (max add)", minval=0.0, maxval=0.2, step=0.01, group=group_srf)
+// === PATCH[SRF:features] ===
+srf_use_features = input.bool(false, "SRF: use ER + Range/ATR features", group=group_srf)
+srf_feat_len     = input.int(20, "SRF feature length", minval=5, group=group_srf)
+srf_k_er         = input.float(2.0, "SRF ER weight", minval=0.0, step=0.1, group=group_srf)
+srf_k_rr         = input.float(0.4, "SRF Range/ATR weight", minval=0.0, step=0.1, group=group_srf)
+srf_rr0          = input.float(2.0, "SRF Range/ATR baseline", minval=0.5, step=0.5, group=group_srf)
+// === PATCH[OBR:inputs] ===
+group_obr = "OB Reaction Model (OBR) • Break vs Reject"
+obr_enable     = input.bool(true, "Enable OBR (break vs reject prob.)", group=group_obr)
+
+obr_zlen       = input.int(120, "Zscore length", minval=20, group=group_obr)
+obr_use_oi     = input.bool(false, "Use Open Interest (if available)", group=group_obr)
+obr_use_ltf    = input.bool(true,  "Use LTF signed-volume delta", group=group_obr)
+obr_ltf        = input.string("5", "LTF for delta (e.g., 1/3/5/15)", group=group_obr)
+
+obr_abs_volz   = input.float(1.0, "Absorption: vol_z ≥", step=0.1, group=group_obr)
+obr_abs_rrz    = input.float(-0.6,"Absorption: range_z ≤", step=0.1, group=group_obr)
+
+obr_conf_k     = input.float(0.10,"Confirm boundary k*dev", step=0.05, group=group_obr)
+obr_gate_k     = input.float(0.10,"Arm gate adjust k", step=0.05, group=group_obr)
+obr_hz_k       = input.float(0.30,"Horizon adjust k", step=0.05, group=group_obr)
+obr_quick_tp_k = input.float(0.60,"Rej-confirm quick TP k*dev", step=0.05, group=group_obr)
+// === PATCH[OBR:oi_agg_inputs] — Aggregated OI toggle (multi-exchange) ===
+group_oi_src       = "OBR • OI Sources"
+oi_src_mode        = input.string("Chart (single)", "OI Mode",
+                      options=["Chart (single)", "Aggregated (multi-exchange)"], group=group_oi_src)
+oi_tf_override     = input.string("", "OI TF override (blank = same as chart TF)", group=group_oi_src)
+oi_agg_includeChart= input.bool(true, "Agg: include chart OI too", group=group_oi_src)
+
+// NOTE: 아래는 '전체 OI 심볼(끝에 _OI 포함된 심볼)'을 그대로 넣는 방식이 가장 안전합니다.
+oi_agg_sym1 = input.string("", "Agg OI #1 (full *_OI symbol)", group=group_oi_src)
+oi_agg_sym2 = input.string("", "Agg OI #2 (full *_OI symbol)", group=group_oi_src)
+oi_agg_sym3 = input.string("", "Agg OI #3 (full *_OI symbol)", group=group_oi_src)
+oi_agg_sym4 = input.string("", "Agg OI #4 (full *_OI symbol)", group=group_oi_src)
+oi_agg_sym5 = input.string("", "Agg OI #5 (full *_OI symbol)", group=group_oi_src)
+// ============================================================================
+// === PATCH[OI:presets_inputs] — OI Presets + Auto Recommendation (v6 SAFE)
+//  - Preset 기반으로 EXCHANGE:TICKER_OI 자동 구성
+//  - `.P` 제거 티커도 보조로 시도(거래소별 표기 차이 완화)
+// ============================================================================
+group_oi_preset     = "OBR • OI Presets (Auto Recommend)"
+oi_preset_enable    = input.bool(true,  "Use preset-based auto OI symbols", group=group_oi_preset)
+
+oi_preset           = input.string("BINANCE+BYBIT+OKX", "Preset",
+                      options=["Chart only","BINANCE+BYBIT+OKX","BINANCE+BYBIT","BINANCE+OKX","BYBIT+OKX","Custom(1..5)"],
+                      group=group_oi_preset)
+
+oi_preset_custom1   = input.string("BINANCE", "Custom EX #1", group=group_oi_preset, inline="c1")
+oi_preset_custom2   = input.string("BYBIT",   "EX #2",        group=group_oi_preset, inline="c1")
+oi_preset_custom3   = input.string("OKX",     "EX #3",        group=group_oi_preset, inline="c2")
+oi_preset_custom4   = input.string("",        "EX #4",        group=group_oi_preset, inline="c2")
+oi_preset_custom5   = input.string("",        "EX #5",        group=group_oi_preset, inline="c3")
+
+oi_preset_try_noP   = input.bool(true, "Fallback: also try ticker without '.P'", group=group_oi_preset)
+oi_ticker_override  = input.string("", "Ticker override (blank = chart ticker)", group=group_oi_preset)
+
+// RLS diagonal variances per-scope — declare BEFORE any function uses them
+// ===== Diagonal-RLS state (per-scope) — safe declare (init later) =====
+var float g_P_st_atr  = na
+var float g_P_st_par  = na
+var float g_P_st_gk  = na
+var float g_P_st_rs  = na
+var float g_P_st_ewma  = na
+var float g_P_it_atr  = na
+var float g_P_it_par  = na
+var float g_P_it_gk  = na
+var float g_P_it_rs  = na
+var float g_P_it_ewma  = na
+var float g_P_lt_atr  = na
+var float g_P_lt_par  = na
+var float g_P_lt_gk  = na
+var float g_P_lt_rs  = na
+var float g_P_lt_ewma  = na
+
+if barstate.isfirst
+    g_P_st_atr := rls_p0, g_P_st_par := rls_p0, g_P_st_gk := rls_p0, g_P_st_rs := rls_p0, g_P_st_ewma := rls_p0
+    g_P_it_atr := rls_p0, g_P_it_par := rls_p0, g_P_it_gk := rls_p0, g_P_it_rs := rls_p0, g_P_it_ewma := rls_p0
+    g_P_lt_atr := rls_p0, g_P_lt_par := rls_p0, g_P_lt_gk := rls_p0, g_P_lt_rs := rls_p0, g_P_lt_ewma := rls_p0
+
+//------------------------------------- User Types & Helpers -----------------------------------------------------------
+type BAR
+    float   open  = open
+    float   high  = high
+    float   low   = low
+    float   close = close
+    int     index = bar_index
+
+
+type ICTMS
+    float   lastPrice
+    float   midPrice
+    float   prevPrice
+
+    int     lastIndex
+    int     midIndex
+    int     prevIndex
+
+    label   lastLabel
+    label   midLabel
+    label   prevLabel
+
+    bool    isCrossed   = false
+    bool    isConfirmed = false
+
+    int     marketStructure
+
+    line    msLine
+    box     msLabel
+    box     swpBox
+
+type MS
+    int type = 0
+// Constants
+const float K_LN2   = 0.6931471805599453
+const float K_GK_C  = 2.0 * math.log(2.0) - 1.0          // GK 보정항
+const float EPS     = 1e-9
+// === PATCH[SRF:er_fast] ===
+f_er_fast(int n) =>
+    float change = math.abs(close - nz(close[n], close))
+    float avgAbs = ta.rma(math.abs(close - close[1]), n)   // O(1) 근사
+    float vol    = math.max(avgAbs * n, EPS)
+    math.min(1.0, change / vol)
+// === PATCH[OBR:helpers] ===
+f_zscore(float x, int n)=>
+    if na(x)
+        0.0
+    else
+        float mu = ta.sma(x, n)
+        float sd = ta.stdev(x, n)
+        (x - mu) / math.max(sd, EPS)
+
+
+f_sigmoid(float x)=>
+    1.0 / (1.0 + math.exp(-x))
+
+// === PATCH[OBR:arr_sum_oob_guard] (REPLACE f_arr_sum) ===
+f_arr_sum(array<float> a)=>
+    float s = 0.0
+    int n = array.size(a)
+    if n > 0
+        int i = 0
+        while i < n
+            s += nz(array.get(a, i), 0.0)
+            i += 1
+    s
+
+
+
+// === PATCH[OBR:ltf_delta_empty_guard] (OPTIONAL REPLACE inside f_ltf_delta) ===
+f_ltf_delta(string tf)=>
+    float out = 0.0
+    if obr_use_ltf
+        array<float> a = request.security_lower_tf(
+             syminfo.tickerid, tf,
+             (close > open ? volume : close < open ? -volume : 0.0),
+             ignore_invalid_timeframe = true)
+        out := array.size(a) > 0 ? f_arr_sum(a) : 0.0
+    out
+
+
+
+// === PATCH : safe clamp helper (math.clamp 대체) ===
+f_clamp(float x, float lo, float hi) =>
+    math.min(math.max(x, lo), hi)
+    
+// === PATCH B-2: SRF core ===
+f_gauss_pdf(float x, float sigma) =>
+    float v = math.max(sigma, EPS)
+    (1.0 / (math.sqrt(2.0 * math.pi) * v)) * math.exp(-0.5 * (x / v) * (x / v))
+
+var float g_srf_p_trend = 0.5   // P(state=Trend)
+f_srf_update(float p_prev) =>
+    float r = nz(math.log(close / nz(close[1], close)), 0.0)
+    float like_tr  = f_gauss_pdf(math.abs(r), srf_sigma_tr)
+    float like_ch  = f_gauss_pdf(math.abs(r), srf_sigma_ch)
+    // === PATCH[SRF:likelihood_boost] ===
+    if srf_use_features
+        float erF = f_er_fast(srf_feat_len)
+        float rr  = (ta.highest(high, srf_feat_len) - ta.lowest(low, srf_feat_len)) / math.max(ta.atr(srf_feat_len), EPS)
+
+        // log-likelihood bias (클램프 필수)
+        float b = f_clamp(srf_k_er * (erF - 0.5) + srf_k_rr * (rr - srf_rr0), -5.0, 5.0)
+        float m = math.exp(b)
+
+        like_tr *= m
+        like_ch *= math.exp(-b)
+
+    float p_pred = p_prev * srf_stick + (1.0 - p_prev) * (1.0 - srf_stick)
+    float num = p_pred * like_tr
+    float den = math.max(num + (1.0 - p_pred) * like_ch, EPS)
+    num / den  // ← 새 확률만 반환
+
+// SRF가 "횡보일 확률"이 높을수록 컷을 가중
+f_srf_gate(float p_trend) =>
+    use_srf ? f_clamp((1.0 - p_trend) * srf_gate, 0.0, 0.95) : 0.0
+
+
+f_textSize(_sz) =>
+    switch _sz
+        'Tiny'   => size.tiny
+        'Small'  => size.small
+        'Normal' => size.normal
+        => size.large
+
+
+f_lineStyle(_style) =>
+    switch _style
+        'Solid'     => line.style_solid
+        'Dotted'    => line.style_dotted
+        'Dashed'    => line.style_dashed
+
+f_queryPatterns(_last, _mid, _prev, _isHigh) =>
+    _isHigh ? (_prev < _mid and _mid >= _last) : (_prev > _mid and _mid <= _last)
+f_lerp(float a, float b, float t) =>
+    a + (b - a) * t
+
+f_rls_upd_component(float e, float x, float w, float P, float lambda) =>
+    float K  = P * x / (lambda + x * x * P)
+    float w2 = w + K * e
+    float P2 = (P - K * x * P) / lambda
+    [w2, math.max(P2, 1e-6)]
+// === PATCH[RLS:strict_diag_helpers] ===
+f_rls_upd_component_shared(float e, float x, float w, float P, float denom, float lambda) =>
+    float K  = (P * x) / math.max(denom, 1e-9)
+    float w2 = w + K * e
+    float P2 = (P - K * x * P) / math.max(lambda, 1e-6)
+    [w2, math.max(P2, 1e-6)]
+
+// === PATCH[RLS:common_residual] (REPLACE f_rls_update ENTIRE) ===
+f_rls_update(int scope,
+             float y_tr, float x_atr, float x_par, float x_gk, float x_rs, float x_ew,
+             float w_atr, float w_par, float w_gk, float w_rs, float w_ew) =>
+
+    float P_atr = scope==0 ? g_P_st_atr : scope==1 ? g_P_it_atr : g_P_lt_atr
+    float P_par = scope==0 ? g_P_st_par : scope==1 ? g_P_it_par : g_P_lt_par
+    float P_gk  = scope==0 ? g_P_st_gk  : scope==1 ? g_P_it_gk  : g_P_lt_gk
+    float P_rs  = scope==0 ? g_P_st_rs  : scope==1 ? g_P_it_rs  : g_P_lt_rs
+    float P_ew  = scope==0 ? g_P_st_ewma: scope==1 ? g_P_it_ewma: g_P_lt_ewma
+
+    float y_hat = (w_atr*x_atr + w_par*x_par + w_gk*x_gk + w_rs*x_rs + w_ew*x_ew)
+    float e     = y_tr - y_hat
+
+    // (엄밀) 공유 분모: λ + Σ(x_i^2 P_i)
+    float denom = rls_lambda + (x_atr*x_atr*P_atr + x_par*x_par*P_par + x_gk*x_gk*P_gk + x_rs*x_rs*P_rs + x_ew*x_ew*P_ew)
+
+    float w_atr2 = na,float w_par2 = na,float w_gk2 = na,float w_rs2 = na,float w_ew2 = na
+    float P_atr2 = na,float P_par2 = na,float P_gk2 = na,float P_rs2 = na,float P_ew2 = na
+
+    if rls_strict_diag
+        [w_atr2, P_atr2] = f_rls_upd_component_shared(e, x_atr, w_atr, P_atr, denom, rls_lambda)
+        [w_par2, P_par2] = f_rls_upd_component_shared(e, x_par, w_par, P_par, denom, rls_lambda)
+        [w_gk2 , P_gk2 ] = f_rls_upd_component_shared(e, x_gk , w_gk , P_gk , denom, rls_lambda)
+        [w_rs2 , P_rs2 ] = f_rls_upd_component_shared(e, x_rs , w_rs , P_rs , denom, rls_lambda)
+        [w_ew2 , P_ew2 ] = f_rls_upd_component_shared(e, x_ew , w_ew , P_ew , denom, rls_lambda)
+    else
+        // (레거시) 성분별 분모
+        [w_atr2, P_atr2] = f_rls_upd_component(e, x_atr, w_atr, P_atr, rls_lambda)
+        [w_par2, P_par2] = f_rls_upd_component(e, x_par, w_par, P_par, rls_lambda)
+        [w_gk2 , P_gk2 ] = f_rls_upd_component(e, x_gk , w_gk , P_gk , rls_lambda)
+        [w_rs2 , P_rs2 ] = f_rls_upd_component(e, x_rs , w_rs , P_rs , rls_lambda)
+        [w_ew2 , P_ew2 ] = f_rls_upd_component(e, x_ew , w_ew , P_ew , rls_lambda)
+
+    [w_atr2, w_par2, w_gk2, w_rs2, w_ew2, P_atr2, P_par2, P_gk2, P_rs2, P_ew2]
+
+
+f_er(int n) =>
+    float change = math.abs(close - nz(close[n], close))
+    float vol = 0.0
+    for i = 0 to n - 1
+        vol += math.abs(nz(close[i], close) - nz(close[i + 1], close))
+    vol := math.max(vol, EPS)
+    math.min(1.0, change / vol)
+
+// 범위 기반 σ들 (returns 단위) → EMA/RMA로 평활 후 sqrt
+f_sigma_parkinson(int n) =>
+    float r  = math.log(math.max(high, EPS) / math.max(low, EPS))
+    float vv = (r * r) * (1.0 / (4.0 * K_LN2))
+    math.sqrt(math.max(ta.rma(vv, n), 0))
+
+f_sigma_gk(int n) =>
+    float rHL = math.log(math.max(high, EPS) / math.max(low, EPS))
+    float rCO = math.log(math.max(close, EPS) / math.max(open, EPS))
+    float vv  = 0.5 * (rHL * rHL) - K_GK_C * (rCO * rCO)
+    math.sqrt(math.max(ta.rma(math.max(vv, 0), n), 0))
+
+f_sigma_rs(int n) =>
+    float v1 = math.log(math.max(high, EPS) / math.max(close, EPS)) * math.log(math.max(high, EPS) / math.max(open, EPS))
+    float v2 = math.log(math.max(low,  EPS) / math.max(close, EPS)) * math.log(math.max(low,  EPS) / math.max(open, EPS))
+    float vv = v1 + v2
+    math.sqrt(math.max(ta.rma(math.max(vv, 0), n), 0))
+
+// EWMA(returns^2) ≈ EMA로 근사
+f_sigma_ewma(int n) =>
+    float r2 = math.pow(math.log(math.max(close, EPS) / math.max(close[1], EPS)), 2.0)
+    math.sqrt(math.max(ta.ema(r2, n), 0))
+
+//---------------- weights (ST/IT/LT 각각 보유)
+var float g_w_atr_st  = na
+var float g_w_par_st  = na
+var float g_w_gk_st  = na
+var float g_w_rs_st  = na
+var float g_w_ewma_st  = na
+var float g_w_atr_it  = na
+var float g_w_par_it  = na
+var float g_w_gk_it  = na
+var float g_w_rs_it  = na
+var float g_w_ewma_it  = na
+var float g_w_atr_lt  = na
+var float g_w_par_lt  = na
+var float g_w_gk_lt  = na
+var float g_w_rs_lt  = na
+var float g_w_ewma_lt  = na
+
+if barstate.isfirst
+    g_w_atr_st  := w0_atr,  g_w_par_st  := w0_par,  g_w_gk_st  := w0_gk,  g_w_rs_st  := w0_rs,  g_w_ewma_st  := w0_ewma
+    g_w_atr_it  := w0_atr,  g_w_par_it  := w0_par,  g_w_gk_it  := w0_gk,  g_w_rs_it  := w0_rs,  g_w_ewma_it  := w0_ewma
+    g_w_atr_lt  := w0_atr,  g_w_par_lt  := w0_par,  g_w_gk_lt  := w0_gk,  g_w_rs_lt  := w0_rs,  g_w_ewma_lt  := w0_ewma
+
+// scope: 0=ST, 1=IT, 2=LT
+f_get_weights(int scope) =>
+    // 로컬 보관 → if/else로 값 주입 → 마지막 줄에서 튜플 반환
+    float a = na
+    float b = na
+    float c = na
+    float d = na
+    float e = na
+    if scope == 0
+        a := g_w_atr_st, b := g_w_par_st, c := g_w_gk_st, d := g_w_rs_st, e := g_w_ewma_st
+    else if scope == 1
+        a := g_w_atr_it, b := g_w_par_it, c := g_w_gk_it, d := g_w_rs_it, e := g_w_ewma_it
+    else
+        a := g_w_atr_lt, b := g_w_par_lt, c := g_w_gk_lt, d := g_w_rs_lt, e := g_w_ewma_lt
+    [a, b, c, d, e]  // ← 튜플은 최종 반환식으로
+
+
+
+// 핵심: 적응형 dev 산출 + (옵션) 온라인 학습
+
+
+f_adapt_dev(int atr_len, int n_range, int n_er, int n_ewma, int scope, bool _use_rls) =>
+    // 1) 개별 dev 후보
+    float dev_atr  = ta.atr(atr_len)
+    float dev_par  = close * f_sigma_parkinson(n_range)
+    float dev_gk   = close * f_sigma_gk(n_range)
+    float dev_rs   = close * f_sigma_rs(n_range)
+    float dev_ewma = close * f_sigma_ewma(n_ewma)
+
+    // 2) 현재 가중 취득 & 정규화 준비
+    [w_atr, w_par, w_gk, w_rs, w_ewma] = f_get_weights(scope)
+    float wsum = math.max(w_atr + w_par + w_gk + w_rs + w_ewma, EPS)
+    float z = (w_atr*dev_atr + w_par*dev_par + w_gk*dev_gk + w_rs*dev_rs + w_ewma*dev_ewma) / wsum
+
+    // 3) ER 스케일링
+    float er    = f_er(n_er)
+    float scale = f_lerp(mult_wide, mult_narrow, er)
+    float dev   = scale * z
+
+    // 4) 온라인 학습/비학습 분기
+    //    - P(state) 로컬 복사
+    float P_atr0 = scope==0 ? g_P_st_atr : scope==1 ? g_P_it_atr : g_P_lt_atr
+    float P_par0 = scope==0 ? g_P_st_par : scope==1 ? g_P_it_par : g_P_lt_par
+    float P_gk0  = scope==0 ? g_P_st_gk  : scope==1 ? g_P_it_gk  : g_P_lt_gk
+    float P_rs0  = scope==0 ? g_P_st_rs  : scope==1 ? g_P_it_rs  : g_P_lt_rs
+    float P_ew0  = scope==0 ? g_P_st_ewma: scope==1 ? g_P_it_ewma: g_P_lt_ewma
+
+    float nw_atr = w_atr, nw_par = w_par, nw_gk = w_gk, nw_rs = w_rs, nw_ewma = w_ewma
+    float nP_atr = P_atr0, nP_par = P_par0, nP_gk = P_gk0, nP_rs = P_rs0, nP_ew = P_ew0
+
+    if use_learn and barstate.isconfirmed
+        float tr_now = ta.tr(true)
+        float den    = math.max(tr_now, EPS)
+
+        if _use_rls
+            // y, x 스케일 안정화
+            float y_rls  = rls_norm_x ? 1.0 : tr_now
+            float x_atr  = rls_norm_x ? (dev_atr  / den) : dev_atr
+            float x_par  = rls_norm_x ? (dev_par  / den) : dev_par
+            float x_gk   = rls_norm_x ? (dev_gk   / den) : dev_gk
+            float x_rs   = rls_norm_x ? (dev_rs   / den) : dev_rs
+            float x_ewma = rls_norm_x ? (dev_ewma / den) : dev_ewma
+
+            [nw_atr, nw_par, nw_gk, nw_rs, nw_ewma, nP_atr, nP_par, nP_gk, nP_rs, nP_ew] = f_rls_update(scope, y_rls, x_atr, x_par, x_gk, x_rs, x_ewma, w_atr, w_par, w_gk, w_rs, w_ewma)
+
+            // --- RLS weights: clamp to positive + normalize ---
+            nw_atr  := math.max(nw_atr,  EPS)
+            nw_par  := math.max(nw_par,  EPS)
+            nw_gk   := math.max(nw_gk,   EPS)
+            nw_rs   := math.max(nw_rs,   EPS)
+            nw_ewma := math.max(nw_ewma, EPS)
+
+            float s_rls = math.max(nw_atr + nw_par + nw_gk + nw_rs + nw_ewma, EPS)
+            nw_atr  := nw_atr  / s_rls
+            nw_par  := nw_par  / s_rls
+            nw_gk   := nw_gk   / s_rls
+            nw_rs   := nw_rs   / s_rls
+            nw_ewma := nw_ewma / s_rls
+
+        else
+            // --- Hedge(상대오차) 업데이트 --- (기존 그대로)
+            float e_atr  = math.abs(tr_now - dev_atr)  / math.max(tr_now, EPS)
+            float e_par  = math.abs(tr_now - dev_par)  / math.max(tr_now, EPS)
+            float e_gk   = math.abs(tr_now - dev_gk)   / math.max(tr_now, EPS)
+            float e_rs   = math.abs(tr_now - dev_rs)   / math.max(tr_now, EPS)
+            float e_ewma = math.abs(tr_now - dev_ewma) / math.max(tr_now, EPS)
+            float nw_atr_h  = w_atr  * math.exp(-learn_rate * e_atr)
+            float nw_par_h  = w_par  * math.exp(-learn_rate * e_par)
+            float nw_gk_h   = w_gk   * math.exp(-learn_rate * e_gk)
+            float nw_rs_h   = w_rs   * math.exp(-learn_rate * e_rs)
+            float nw_ewma_h = w_ewma * math.exp(-learn_rate * e_ewma)
+            float s_h = math.max(nw_atr_h + nw_par_h + nw_gk_h + nw_rs_h + nw_ewma_h, EPS)
+            nw_atr := nw_atr_h / s_h
+            nw_par := nw_par_h / s_h
+            nw_gk  := nw_gk_h  / s_h
+            nw_rs  := nw_rs_h  / s_h
+            nw_ewma:= nw_ewma_h/ s_h
+
+    else
+        // --- 학습 비활성 시: 현재 가중치 정규화만 보장 ---
+        float s0 = math.max(wsum, EPS)
+        nw_atr := w_atr / s0
+        nw_par := w_par / s0
+        nw_gk  := w_gk  / s0
+        nw_rs  := w_rs  / s0
+        nw_ewma:= w_ewma/ s0
+
+    [dev, nw_atr, nw_par, nw_gk, nw_rs, nw_ewma, nP_atr, nP_par, nP_gk, nP_rs, nP_ew]
+
+
+
+
+
+method queryPatterns(ICTMS this, _isHigh) =>
+    _isHigh ? (this.prevPrice < this.midPrice and this.midPrice >= this.lastPrice)            : (this.prevPrice > this.midPrice and this.midPrice <= this.lastPrice)
+
+method updatePattern(ICTMS this, _price, _index) =>
+    this.isCrossed := false
+    this.prevPrice := this.midPrice, this.midPrice := this.lastPrice, this.lastPrice := _price
+    this.prevIndex := this.midIndex, this.midIndex := this.lastIndex, this.lastIndex := _index
+    this.prevLabel := this.midLabel, this.midLabel := this.lastLabel
+
+method setType(MS this, _v) => this.type := _v
+
+method renderStructures(ICTMS this, _isBull, MS _ms, _tt, _clr, _style, _width, _lbl) =>
+    _cond = _isBull ? close > this.lastPrice : close < this.lastPrice
+    if _cond and not this.isCrossed
+        this.isCrossed := true
+        this.isConfirmed := false
+        this.msLine := line.new(this.lastIndex, this.lastPrice, bar_index, this.lastPrice, color=_clr, style=f_lineStyle(_style), width=_width)
+        this.swpBox := box.new(bar_index, this.lastPrice, bar_index, this.lastPrice, color.new(_clr, 73), bgcolor=color.new(_clr, 73))
+        if _lbl
+            // 명시적 color형 인자 사용; 텍스트 가독성 강화
+            this.msLabel := box.new(this.lastIndex, this.lastPrice, bar_index, this.lastPrice, border_color=color.new(_clr, 100), bgcolor=na,text = _ms.type == (_isBull ? -1 : 1) ? _tt + '-CHoCH' : _tt + '-BoS',text_size=size.tiny, text_halign=text.align_left,text_valign=_isBull ? text.align_bottom : text.align_top,text_color=color.new(_clr, 17))
+        _ms.setType(_isBull ? 1 : -1)
+
+method validateStructures(ICTMS this, _isBull, _dev, _tt, _lbl) =>
+    float lvl = this.lastPrice
+    float dv  = math.max(_dev, EPS)
+
+    // Confirm 분리 옵션
+    bool closeBreak = _isBull ? (close > lvl) : (close < lvl)
+    bool devPass    = _isBull ? (close > (lvl + dv)) : (close < (lvl - dv))
+    bool confirmOK  = ams_confirm_mode == "Close+Dev (legacy)" ? (close > (lvl + dv) or close < (lvl - dv)) : (closeBreak and devPass)
+
+    // Sweep 모드(옵션)
+    float b1 = ams_sweep_k1 * dv
+    float b2 = ams_sweep_k2 * dv
+    bool wickSweep =
+         _isBull ? (high > (lvl + b1) and close < (lvl + b2)) :
+                   (low  < (lvl - b1) and close > (lvl - b2))
+
+    bool legacySweep =
+         (close > (lvl + dv) or close < (lvl - dv)) and
+         (_isBull ? (close < (lvl - dv)) : (close > (lvl + dv)))
+
+    bool sweepOK = ams_sweep_mode == "Wick sweep (ICT)" ? wickSweep : legacySweep
+
+    if (confirmOK or sweepOK) and not this.isConfirmed
+        this.isConfirmed := true
+        if not na(this.swpBox)
+            this.swpBox.set_right(bar_index)
+
+        if _lbl and not na(this.msLabel)
+            if sweepOK
+                this.msLabel.set_text(_tt + '-SWEEP')
+    else
+        if not na(this.swpBox) and this.isCrossed and not this.isConfirmed
+            if close > (lvl - dv) and close < (lvl + dv)
+                this.swpBox.set_right(bar_index)
+                if _isBull
+                    this.swpBox.set_top(math.max(math.min(high, lvl + dv), this.swpBox.get_top()))
+                else
+                    this.swpBox.set_rightbottom(bar_index, math.min(math.max(low, lvl - dv), this.swpBox.get_bottom()))
+
+//------------------------------------- Calculations : ST/IT/LT --------------------------------------------------------
+//--- [Calculations : ST/IT/LT] 직후 또는 그 위에서 사용 전 선언
+// PATCH C: 전역 스코프에서 안전하게 갱신
+float st_dev = na
+float it_dev = na
+float lt_dev = na
+float st_wa = na
+float st_wp = na
+float st_wg = na
+float st_wr = na
+float st_we = na
+float it_wa = na
+float it_wp = na
+float it_wg = na
+float it_wr = na
+float it_we = na
+float lt_wa = na
+float lt_wp = na
+float lt_wg = na
+float lt_wr = na
+float lt_we = na
+
+
+
+if use_adapt
+    // 11개씩 반환 (dev + W5 + P5)
+    [st_dev, st_wa, st_wp, st_wg, st_wr, st_we, stP_a, stP_p, stP_gk, stP_rs, stP_ew] = f_adapt_dev(atr_len_st, atr_len_st, er_len, ewma_len, 0, use_rls)
+
+    [it_dev, it_wa, it_wp, it_wg, it_wr, it_we, itP_a, itP_p, itP_gk, itP_rs, itP_ew] = f_adapt_dev(atr_len_it, atr_len_it, er_len, ewma_len, 1, use_rls)
+
+    [lt_dev, lt_wa, lt_wp, lt_wg, lt_wr, lt_we, ltP_a, ltP_p, ltP_gk, ltP_rs, ltP_ew] = f_adapt_dev(atr_len_lt, atr_len_lt, er_len, ewma_len, 2, use_rls)
+
+
+
+    // 전역 갱신은 "최상위"에서만!
+    if use_learn and barstate.isconfirmed
+        // 가중치
+        g_w_atr_st := st_wa, g_w_par_st := st_wp, g_w_gk_st := st_wg, g_w_rs_st := st_wr, g_w_ewma_st := st_we
+        g_w_atr_it := it_wa, g_w_par_it := it_wp, g_w_gk_it := it_wg, g_w_rs_it := it_wr, g_w_ewma_it := it_we
+        g_w_atr_lt := lt_wa, g_w_par_lt := lt_wp, g_w_gk_lt := lt_wg, g_w_rs_lt := lt_wr, g_w_ewma_lt := lt_we
+        // RLS 분산(P) — scope별 기록
+        g_P_st_atr := stP_a, g_P_st_par := stP_p, g_P_st_gk := stP_gk, g_P_st_rs := stP_rs, g_P_st_ewma := stP_ew
+        g_P_it_atr := itP_a, g_P_it_par := itP_p, g_P_it_gk := itP_gk, g_P_it_rs := itP_rs, g_P_it_ewma := itP_ew
+        g_P_lt_atr := ltP_a, g_P_lt_par := ltP_p, g_P_lt_gk := ltP_gk, g_P_lt_rs := ltP_rs, g_P_lt_ewma := ltP_ew
+else
+
+    // (고정 ATR 경로) 기존 그대로 유지
+    st_dev := ta.atr(17)
+    it_dev := ta.atr(34)
+    lt_dev := ta.atr(55)
+// ANCHOR[AMS:dev_fallback] — insert BELOW your st/it/lt dev assignments
+// 안전 폴백: 가변 dev가 na일 때 고정 ATR로 대체
+float st_dev_safe = na(st_dev) ? ta.atr(atr_len_st) : st_dev
+float it_dev_safe = na(it_dev) ? ta.atr(atr_len_it) : it_dev
+float lt_dev_safe = na(lt_dev) ? ta.atr(atr_len_lt) : lt_dev
+
+BAR g_bar = BAR.new()
+//sweepATR = ta.atr(17)기존 고정 atr 주석 처리
+
+// ST
+var ICTMS stLow  = ICTMS.new()
+var ICTMS stHigh = ICTMS.new()
+var MS    stMS   = MS.new()
+
+if f_queryPatterns(low, low[1], low[2], false)
+    stLow.updatePattern(low[1], bar_index[1])
+    _tx = stSwings == '⦁' ? '⦁' : stLow.midPrice > stLow.lastPrice ? 'ST-LL' : 'ST-LH'
+    stLow.lastLabel := label.new(stLow.lastIndex, stLow.lastPrice, _tx, color=na, textcolor=stSwings != 'Disabled' ? stBearMSColor : na, style=label.style_label_up, size=f_textSize(stSwingsSZ))
+
+if f_queryPatterns(high, high[1], high[2], true)
+    stHigh.updatePattern(high[1], bar_index[1])
+    _tx = stSwings == '⦁' ? '⦁' : stHigh.midPrice > stHigh.lastPrice ? 'ST-HL' : 'ST-HH'
+    stHigh.lastLabel := label.new(bar_index[1], high[1], _tx, color=na, textcolor=stSwings != 'Disabled' ? stBullMSColor : na, style=label.style_label_down, size=f_textSize(stSwingsSZ))
+
+if stMarketStructures
+    stLow.renderStructures(false, stMS, 'ST', stBearMSColor, stMSLineStyle, stMSLineWidth, stMSText)
+    stHigh.renderStructures(true , stMS, 'ST', stBullMSColor, stMSLineStyle, stMSLineWidth, stMSText)
+
+if stMSSweep
+    stLow.validateStructures(false, st_dev_safe, 'STL', stMSText)
+    stHigh.validateStructures(true , st_dev_safe, 'STH', stMSText)
+
+// IT
+var ICTMS itLow  = ICTMS.new()
+var ICTMS itHigh = ICTMS.new()
+var MS    itMS   = MS.new()
+
+_cITL = stLow.queryPatterns(false)
+if _cITL and _cITL != _cITL[1]
+    itLow.updatePattern(stLow.midPrice, stLow.midIndex)
+    itLow.lastLabel := stLow.midLabel
+    if itSwings != 'Disabled'
+        _tx = itSwings == '△▽' ? '△' : itSwings == '◈' ? '◈' : itLow.lastPrice > itLow.midPrice ? 'IT-LH' : 'IT-LL'
+        stLow.midLabel.set_text(_tx), stLow.midLabel.set_size(f_textSize(itSwingsSZ)), stLow.midLabel.set_textcolor(itBearMSColor)
+
+_cITH = stHigh.queryPatterns(true)
+if _cITH and _cITH != _cITH[1]
+    itHigh.updatePattern(stHigh.midPrice, stHigh.midIndex)
+    itHigh.lastLabel := stHigh.midLabel
+    if itSwings != 'Disabled'
+        _tx = itSwings == '△▽' ? '▽' : itSwings == '◈' ? '◈' : itHigh.lastPrice > itHigh.midPrice ? 'IT-HH' : 'IT-HL'
+        stHigh.midLabel.set_text(_tx), stHigh.midLabel.set_size(f_textSize(itSwingsSZ)), stHigh.midLabel.set_textcolor(itBullMSColor)
+
+if itMarketStructures
+    itLow.renderStructures(false, itMS, 'IT', itBearMSColor, itMSLineStyle, itMSLineWidth, itMSText)
+    itHigh.renderStructures(true , itMS, 'IT', itBullMSColor, itMSLineStyle, itMSLineWidth, itMSText)
+
+if itMSSweep
+    itLow.validateStructures(false, it_dev_safe, 'ITL', itMSText)
+    itHigh.validateStructures(true , it_dev_safe, 'ITH', itMSText)
+
+// LT
+var ICTMS ltLow  = ICTMS.new()
+var ICTMS ltHigh = ICTMS.new()
+var MS    ltMS   = MS.new()
+
+_cLTL = itLow.queryPatterns(false)
+if _cLTL and _cLTL != _cLTL[1]
+    ltLow.isCrossed := false
+    _tx = ltSwings == '▲▼' ? '▲' : ltSwings == '◉' ? '◉' : ltLow.lastPrice > itLow.midPrice ? 'LT-LL' : 'LT-LH'
+    ltLow.lastPrice := itLow.midPrice, ltLow.lastIndex := itLow.midIndex
+    if ltSwings != 'Disabled'
+        itLow.midLabel.set_text(_tx), itLow.midLabel.set_size(f_textSize(ltSwingsSZ)), itLow.midLabel.set_textcolor(ltBearMSColor)
+
+_cLTH = itHigh.queryPatterns(true)
+if _cLTH and _cLTH != _cLTH[1]
+    ltHigh.isCrossed := false
+    _tx = ltSwings == '▲▼' ? '▼' : ltSwings == '◉' ? '◉' : ltHigh.lastPrice > itHigh.midPrice ? 'LT-HL' : 'LT-HH'
+    ltHigh.lastPrice := itHigh.midPrice, ltHigh.lastIndex := itHigh.midIndex
+    if ltSwings != 'Disabled'
+        itHigh.midLabel.set_text(_tx), itHigh.midLabel.set_size(f_textSize(ltSwingsSZ)), itHigh.midLabel.set_textcolor(ltBullMSColor)
+
+if ltMarketStructures
+    ltLow.renderStructures(false, ltMS, 'LT', ltBearMSColor, ltMSLineStyle, ltMSLineWidth, ltMSText)
+    ltHigh.renderStructures(true , ltMS, 'LT', ltBullMSColor, ltMSLineStyle, ltMSLineWidth, ltMSText)
+
+if ltMSSweep
+    ltLow.validateStructures(false, lt_dev_safe, 'LTL', ltMSText)
+    ltHigh.validateStructures(true , lt_dev_safe, 'LTH', ltMSText)
+
+//------------------------------------- Alerts: AMS (원본 유지) ---------------------------------------------------------
+// [REPLACE] Alerts: AMS 섹션의 st_prev/it_prev/lt_prev 및 cross/confirm 계산부 전체를 아래로 교체
+
+group_alerts = 'Alerts'
+use_alerts   = input.bool(true, 'Enable Alerts', group = group_alerts)
+
+// --- v6 SAFE: UDT field -> series mirror (필드에 [] 금지) ---
+int  stMS_type  = stMS.type
+int  itMS_type  = itMS.type
+int  ltMS_type  = ltMS.type
+
+bool stLow_cross  = stLow.isCrossed
+bool stHigh_cross = stHigh.isCrossed
+bool itLow_cross  = itLow.isCrossed
+bool itHigh_cross = itHigh.isCrossed
+bool ltLow_cross  = ltLow.isCrossed
+bool ltHigh_cross = ltHigh.isCrossed
+
+bool stLow_conf   = stLow.isConfirmed
+bool stHigh_conf  = stHigh.isConfirmed
+bool itLow_conf   = itLow.isConfirmed
+bool itHigh_conf  = itHigh.isConfirmed
+bool ltLow_conf   = ltLow.isConfirmed
+bool ltHigh_conf  = ltHigh.isConfirmed
+
+int st_prev = nz(stMS_type[1], 0)
+int it_prev = nz(itMS_type[1], 0)
+int lt_prev = nz(ltMS_type[1], 0)
+
+var int g_st_pending = 0, g_it_pending = 0, g_lt_pending = 0
+
+// bool은 nz() 쓰지 말 것( v6 ) → 그냥 [1] 사용
+bool st_cross_now = (stLow_cross  and not stLow_cross[1])  or (stHigh_cross and not stHigh_cross[1])
+bool it_cross_now = (itLow_cross  and not itLow_cross[1])  or (itHigh_cross and not itHigh_cross[1])
+bool lt_cross_now = (ltLow_cross  and not ltLow_cross[1])  or (ltHigh_cross and not ltHigh_cross[1])
+
+if st_cross_now
+    g_st_pending := (stMS_type != st_prev and st_prev != 0) ? -1 : 1
+if it_cross_now
+    g_it_pending := (itMS_type != it_prev and it_prev != 0) ? -1 : 1
+if lt_cross_now
+    g_lt_pending := (ltMS_type != lt_prev and lt_prev != 0) ? -1 : 1
+
+bool st_confirm_now = (stLow_conf  and not stLow_conf[1])  or (stHigh_conf and not stHigh_conf[1])
+bool it_confirm_now = (itLow_conf  and not itLow_conf[1])  or (itHigh_conf and not itHigh_conf[1])
+bool lt_confirm_now = (ltLow_conf  and not ltLow_conf[1])  or (ltHigh_conf and not ltHigh_conf[1])
+
+float st_anchor = (stHigh_conf and not stHigh_conf[1]) ? stHigh.lastPrice :
+                  (stLow_conf  and not stLow_conf[1])  ? stLow.lastPrice  : na
+float it_anchor = (itHigh_conf and not itHigh_conf[1]) ? itHigh.lastPrice :
+                  (itLow_conf  and not itLow_conf[1])  ? itLow.lastPrice  : na
+float lt_anchor = (ltHigh_conf and not ltHigh_conf[1]) ? ltHigh.lastPrice :
+                  (ltLow_conf  and not ltLow_conf[1])  ? ltLow.lastPrice  : na
+
+bool st_conf_bar = (stHigh_conf and not stHigh_conf[1]) or (stLow_conf and not stLow_conf[1])
+bool it_conf_bar = (itHigh_conf and not itHigh_conf[1]) or (itLow_conf and not itLow_conf[1])
+bool lt_conf_bar = (ltHigh_conf and not ltHigh_conf[1]) or (ltLow_conf and not ltLow_conf[1])
+
+bool st_wick_sweep =
+     ( (stHigh_conf and not stHigh_conf[1]) and (high > stHigh.lastPrice + ams_sweep_k1*st_dev_safe) and (close < stHigh.lastPrice + ams_sweep_k2*st_dev_safe) ) or
+     ( (stLow_conf  and not stLow_conf[1])  and (low  < stLow .lastPrice - ams_sweep_k1*st_dev_safe) and (close > stLow .lastPrice - ams_sweep_k2*st_dev_safe) )
+
+bool st_legacy_sweep =
+     st_conf_bar and ( (stHigh_conf and close < stHigh.lastPrice - st_dev_safe) or
+                       (stLow_conf  and close > stLow .lastPrice + st_dev_safe) )
+
+bool st_sweep_now = (ams_sweep_mode == "Wick sweep (ICT)") ? st_wick_sweep : st_legacy_sweep
+
+bool it_wick_sweep =
+     ( (itHigh_conf and not itHigh_conf[1]) and (high > itHigh.lastPrice + ams_sweep_k1*it_dev_safe) and (close < itHigh.lastPrice + ams_sweep_k2*it_dev_safe) ) or
+     ( (itLow_conf  and not itLow_conf[1])  and (low  < itLow .lastPrice - ams_sweep_k1*it_dev_safe) and (close > itLow .lastPrice - ams_sweep_k2*it_dev_safe) )
+
+bool it_legacy_sweep =
+     it_conf_bar and ( (itHigh_conf and close < itHigh.lastPrice - it_dev_safe) or
+                       (itLow_conf  and close > itLow .lastPrice + it_dev_safe) )
+
+bool it_sweep_now = (ams_sweep_mode == "Wick sweep (ICT)") ? it_wick_sweep : it_legacy_sweep
+
+bool lt_wick_sweep =
+     ( (ltHigh_conf and not ltHigh_conf[1]) and (high > ltHigh.lastPrice + ams_sweep_k1*lt_dev_safe) and (close < ltHigh.lastPrice + ams_sweep_k2*lt_dev_safe) ) or
+     ( (ltLow_conf  and not ltLow_conf[1])  and (low  < ltLow .lastPrice - ams_sweep_k1*lt_dev_safe) and (close > ltLow .lastPrice - ams_sweep_k2*lt_dev_safe) )
+
+bool lt_legacy_sweep =
+     lt_conf_bar and ( (ltHigh_conf and close < ltHigh.lastPrice - lt_dev_safe) or
+                       (ltLow_conf  and close > ltLow .lastPrice + lt_dev_safe) )
+
+bool lt_sweep_now = (ams_sweep_mode == "Wick sweep (ICT)") ? lt_wick_sweep : lt_legacy_sweep
+
+
+
+// === PATCH[AMS:type_latch_on_confirm] ===
+// confirm 시점에만 방향(type) 확정값을 latch (ATE가 미확정 cross 타입에 오염되지 않게)
+var int g_st_type_conf = 0
+var int g_it_type_conf = 0
+var int g_lt_type_conf = 0
+
+if barstate.isfirst
+    g_st_type_conf := 0
+    g_it_type_conf := 0
+    g_lt_type_conf := 0
+
+if barstate.isconfirmed
+    if st_confirm_now
+        g_st_type_conf := stMS_type
+    if it_confirm_now
+        g_it_type_conf := itMS_type
+    if lt_confirm_now
+        g_lt_type_conf := ltMS_type
+
+f_pick_type_confirmed(string _scope)=>
+    int t = 0
+    if _scope == "Short Term"
+        t := g_st_type_conf
+    else if _scope == "Intermediate Term"
+        t := g_it_type_conf
+    else
+        t := g_lt_type_conf
+    t
+
+// 이후 alertcondition/alert 블록은 기존 그대로 사용 가능
+
+
+
+const string MSG_ST_BOS   = 'ICT-AMS: ST BoS confirmed'
+const string MSG_ST_CHOCH = 'ICT-AMS: ST CHoCH confirmed'
+const string MSG_ST_SWEEP = 'ICT-AMS: ST SWEEP confirmed'
+const string MSG_IT_BOS   = 'ICT-AMS: IT BoS confirmed'
+const string MSG_IT_CHOCH = 'ICT-AMS: IT CHoCH confirmed'
+const string MSG_IT_SWEEP = 'ICT-AMS: IT SWEEP confirmed'
+const string MSG_LT_BOS   = 'ICT-AMS: LT BoS confirmed'
+const string MSG_LT_CHOCH = 'ICT-AMS: LT CHoCH confirmed'
+const string MSG_LT_SWEEP = 'ICT-AMS: LT SWEEP confirmed'
+
+alertcondition(st_confirm_now and g_st_pending ==  1, 'ST BoS Confirmed',   MSG_ST_BOS)
+alertcondition(st_confirm_now and g_st_pending == -1, 'ST CHoCH Confirmed', MSG_ST_CHOCH)
+alertcondition(it_confirm_now and g_it_pending ==  1, 'IT BoS Confirmed',   MSG_IT_BOS)
+alertcondition(it_confirm_now and g_it_pending == -1, 'IT CHoCH Confirmed', MSG_IT_CHOCH)
+alertcondition(lt_confirm_now and g_lt_pending ==  1, 'LT BoS Confirmed',   MSG_LT_BOS)
+alertcondition(lt_confirm_now and g_lt_pending == -1, 'LT CHoCH Confirmed', MSG_LT_CHOCH)
+
+alertcondition(st_sweep_now, 'ST SWEEP Confirmed', MSG_ST_SWEEP)
+alertcondition(it_sweep_now, 'IT SWEEP Confirmed', MSG_IT_SWEEP)
+alertcondition(lt_sweep_now, 'LT SWEEP Confirmed', MSG_LT_SWEEP)
+
+// PATCH[AMS:choch_flags] — one-bar CHOCH confirmation flags per scope
+//  - CHoCH 확정 bar에서만 true, 그 외엔 false
+bool g_st_choch_conf = st_confirm_now and g_st_pending == -1
+bool g_it_choch_conf = it_confirm_now and g_it_pending == -1
+bool g_lt_choch_conf = lt_confirm_now and g_lt_pending == -1
+// === PATCH[AMS:bos_flags] ===
+bool g_st_bos_conf = st_confirm_now and g_st_pending ==  1
+bool g_it_bos_conf = it_confirm_now and g_it_pending ==  1
+bool g_lt_bos_conf = lt_confirm_now and g_lt_pending ==  1
+
+f_pick_ms_events(string _scope)=>
+    bool bos = false
+    bool choch = false
+    if _scope == "Short Term"
+        bos := g_st_bos_conf
+        choch := g_st_choch_conf
+    else if _scope == "Intermediate Term"
+        bos := g_it_bos_conf
+        choch := g_it_choch_conf
+    else
+        bos := g_lt_bos_conf
+        choch := g_lt_choch_conf
+    [bos, choch]
+
+if use_alerts and barstate.isconfirmed
+    if st_confirm_now
+        _evt = g_st_pending == 1 ? 'ST_BOS_CONF' : g_st_pending == -1 ? 'ST_CHOCH_CONF' : 'ST_CONF'
+        alert('{"tag":"ICT-AMS","event":"'+_evt+'","sym":"'+syminfo.ticker+'","tf":"'+timeframe.period+'","px":'+str.tostring(close)+',"level":'+str.tostring(st_anchor)+',"ts":'+str.tostring(time)+'}', alert.freq_once_per_bar_close)
+        g_st_pending := 0
+    if st_sweep_now
+        alert('{"tag":"ICT-AMS","event":"ST_SWEEP_CONF","sym":"'+syminfo.ticker+'","tf":"'+timeframe.period+'","px":'+str.tostring(close)+',"level":'+str.tostring(st_anchor)+',"ts":'+str.tostring(time)+'}', alert.freq_once_per_bar_close)
+    if it_confirm_now
+        _evt = g_it_pending == 1 ? 'IT_BOS_CONF' : g_it_pending == -1 ? 'IT_CHOCH_CONF' : 'IT_CONF'
+        alert('{"tag":"ICT-AMS","event":"'+_evt+'","sym":"'+syminfo.ticker+'","tf":"'+timeframe.period+'","px":'+str.tostring(close)+',"level":'+str.tostring(it_anchor)+',"ts":'+str.tostring(time)+'}', alert.freq_once_per_bar_close)
+        g_it_pending := 0
+    if it_sweep_now
+        alert('{"tag":"ICT-AMS","event":"IT_SWEEP_CONF","sym":"'+syminfo.ticker+'","tf":"'+timeframe.period+'","px":'+str.tostring(close)+',"level":'+str.tostring(it_anchor)+',"ts":'+str.tostring(time)+'}', alert.freq_once_per_bar_close)
+    if lt_confirm_now
+        _evt = g_lt_pending == 1 ? 'LT_BOS_CONF' : g_lt_pending == -1 ? 'LT_CHOCH_CONF' : 'LT_CONF'
+        alert('{"tag":"ICT-AMS","event":"'+_evt+'","sym":"'+syminfo.ticker+'","tf":"'+timeframe.period+'","px":'+str.tostring(close)+',"level":'+str.tostring(lt_anchor)+',"ts":'+str.tostring(time)+'}', alert.freq_once_per_bar_close)
+        g_lt_pending := 0
+    if lt_sweep_now
+        alert('{"tag":"ICT-AMS","event":"LT_SWEEP_CONF","sym":"'+syminfo.ticker+'","tf":"'+timeframe.period+'","px":'+str.tostring(close)+',"level":'+str.tostring(lt_anchor)+',"ts":'+str.tostring(time)+'}', alert.freq_once_per_bar_close)
+
+//======================================================================================================================
+// 2) OB/BB (추가 스크립트) — 안전 병합판
+//    * 핵심 변경: 전역 삭제 제거, 우리 전용 배열로만 삭제/재생성
+//======================================================================================================================
+group_ob = "OB/BB (Price Action Blocks)"
+obTerm = input.string('Intermediate Term', 'Detection Depth', options=['Short Term','Intermediate Term','Long Term'], group=group_ob)
+obShowBull = input.int(3, 'Show Last Bullish OB', minval=0, group=group_ob)
+obShowBear = input.int(3, 'Show Last Bearish OB', minval=0, group=group_ob)
+obUseBody  = input.bool(true, 'Use Candle Body', group=group_ob)
+// === PATCH[OB:max_scan] ===
+obMaxScan = input.int(1200, "Max OB Scan (bars)", minval=50, maxval=5000, group=group_ob)
+// === PATCH[OB:cap_ttl_inputs] ===
+obMaxKeep = input.int(250, "Max OB Keep (per side)", minval=50, maxval=2000, group=group_ob)
+obTtlBars = input.int(3000, "OB TTL (bars, 0=off)", minval=0, maxval=20000, group=group_ob)
+// === PATCH[OB:def_mode_inputs] ===
+obDefMode = input.string("Extremum (current)", "OB Definition",
+     options=["Extremum (current)","Last Opposite Candle (ICT)","Volume Spike Candle"], group=group_ob)
+
+obSpikeMinBody = input.float(0.25, "Spike: min body/range", minval=0.0, maxval=1.0, step=0.05, group=group_ob)
+
+group_ob_style = "OB/BB Style"
+obBullCss      = input.color(color.new(#2157f3, 80), 'Bullish OB',   inline='bull', group=group_ob_style)
+obBullBreakCss = input.color(color.new(#ff1100, 40), 'Bullish Break', inline='bull', group=group_ob_style)
+obBearCss      = input.color(color.new(#ff5d00, 80), 'Bearish OB',   inline='bear', group=group_ob_style)
+obBearBreakCss = input.color(color.new(#0cb51a, 40), 'Bearish Break', inline='bear', group=group_ob_style)
+obShowLabels   = input.bool(true, 'Show Historical Polarity Changes', group=group_ob_style)
+//── Metrics / Liquidity heatmap (volume profile snapshot)
+group_obm = "OB/BB Metrics & Heatmap"
+obm_showText      = input.bool(true, "Show OB Metrics Text", group=group_obm)
+obm_metaZLen      = input.int(200, "Vol/Flow Z Lookback", minval=20, group=group_obm)
+obm_useAggOI      = input.bool(true, "Use Aggregated OI (crypto perp/futures)", group=group_obm)
+obm_oiZLen        = input.int(200, "OI Δ Z Lookback", minval=20, group=group_obm)
+
+obm_liqLookback   = input.int(260, "Liquidity Profile Lookback", minval=60, maxval=2000, group=group_obm)
+obm_liqBins       = input.int(60,  "Liquidity Profile Bins", minval=20, maxval=200, group=group_obm)
+obm_liqAsPercent  = input.bool(true, "Liquidity as % of max bin", group=group_obm)
+
+f_notransp(color _c) => color.rgb(color.r(_c), color.g(_c), color.b(_c))
+
+// === PATCH[OB:O1_helpers] (REPLACE) ===
+f_span_from_pivot(int pivot_x, int max_scan) =>
+    // pivot_x가 na이거나 미래값이면 최소 span=1로 강제
+    int px   = na(pivot_x) ? bar_index : pivot_x
+    int len0 = bar_index - px
+    int span0 = (len0 <= 1) ? 1 : (len0 - 1)           // 현재 bar 제외
+    int span1 = math.min(span0, max_scan)
+    int span2 = math.min(span1, 5000)                  // TV 히스토리 참조 하드리밋
+    span2
+
+// === PATCH[OB:k_index_fix] (REPLACE) ===
+f_lowest_k(series float src, int span) =>
+    int sp = (na(span) or span < 1) ? 1 : math.min(span, 5000)
+    int off = ta.lowestbars(src[1], sp)
+    off := na(off) ? 0 : off
+    // 혹시 모를 음수/범위초과 방어
+    if off < 0
+        off := 0
+    if off > sp - 1
+        off := sp - 1
+    1 + off  // k는 항상 >= 1
+
+f_highest_k(series float src, int span) =>
+    int sp = (na(span) or span < 1) ? 1 : math.min(span, 5000)
+    int off = ta.highestbars(src[1], sp)
+    off := na(off) ? 0 : off
+    if off < 0
+        off := 0
+    if off > sp - 1
+        off := sp - 1
+    1 + off
+// === PATCH[OB:def_mode_helpers] ===
+f_pick_ob_k_bull(int span, series float wMin, series float wMax)=>
+    int sp = (na(span) or span < 1) ? 1 : math.min(span, 5000)
+    int kBest = f_lowest_k(wMin, sp)  // fallback
+    if obDefMode == "Last Opposite Candle (ICT)"
+        int k = 1
+        while k <= sp
+            if close[k] < open[k]
+                kBest := k
+                break
+            k += 1
+    else if obDefMode == "Volume Spike Candle"
+        float bestV = na
+        int k = 1
+        while k <= sp
+            float rng = math.max(high[k]-low[k], EPS)
+            float bod = math.abs(close[k]-open[k])
+            float br  = bod / rng
+            if (close[k] < open[k]) and (br >= obSpikeMinBody)
+                float vv = volume[k]
+                if na(bestV) or vv > bestV
+                    bestV := vv
+                    kBest := k
+            k += 1
+    kBest
+
+f_pick_ob_k_bear(int span, series float wMin, series float wMax)=>
+    int sp = (na(span) or span < 1) ? 1 : math.min(span, 5000)
+    int kBest = f_highest_k(wMax, sp) // fallback
+    if obDefMode == "Last Opposite Candle (ICT)"
+        int k = 1
+        while k <= sp
+            if close[k] > open[k]
+                kBest := k
+                break
+            k += 1
+    else if obDefMode == "Volume Spike Candle"
+        float bestV = na
+        int k = 1
+        while k <= sp
+            float rng = math.max(high[k]-low[k], EPS)
+            float bod = math.abs(close[k]-open[k])
+            float br  = bod / rng
+            if (close[k] > open[k]) and (br >= obSpikeMinBody)
+                float vv = volume[k]
+                if na(bestV) or vv > bestV
+                    bestV := vv
+                    kBest := k
+            k += 1
+    kBest
+
+
+//-------------------------- Types
+type w_swing
+    float y = na
+    int   x = na
+    bool  crossed = false
+
+type w_vec
+    array<w_swing> v
+
+type w_ob
+    float top = na
+    float btm = na
+    int   loc = time
+    bool  breaker = false
+    int   break_loc = na
+
+    // === PATCH: 저장 메타(후보 품질/나이 계산의 valuewhen 의존 제거) ===
+    int   idx = na
+    float rng = na
+    float bod = na
+    float up_wick = na
+    float dn_wick = na
+
+
+//-------------------------- Detect (원리 동일, 네이밍만 정리)
+method detect(array<w_vec> id, string _mode, int _depth)=>
+    var w_swing swingLevel = w_swing.new(na, na)
+    for i = 0 to _depth-1
+        _v = id.get(i).v
+        if _v.size() == 3
+            _pivot = switch _mode
+                'bull' => math.max(math.max(_v.get(0).y, _v.get(1).y), _v.get(2).y)
+                'bear' => math.min(math.min(_v.get(0).y, _v.get(1).y), _v.get(2).y)
+
+            if _pivot == _v.get(1).y
+                if i < _depth-1
+                    id.get(i+1).v.unshift(_v.get(1))
+                    if id.get(i+1).v.size() > 3
+                        id.get(i+1).v.pop()
+                else
+                    swingLevel := w_swing.new(_v.get(1).y, _v.get(1).x)
+                _v.pop(), _v.pop()
+    swingLevel
+
+//-------------------------- Swings build
+_wDepth = switch obTerm
+    'Short Term' => 1
+    'Intermediate Term' => 2
+    => 3
+
+var fh = array.new<w_vec>(0)
+var fl = array.new<w_vec>(0)
+if barstate.isfirst
+    for i = 0 to _wDepth-1
+        fh.push(w_vec.new(array.new<w_swing>(0)))
+        fl.push(w_vec.new(array.new<w_swing>(0)))
+
+fh.get(0).v.unshift(w_swing.new(high, bar_index))
+fl.get(0).v.unshift(w_swing.new(low,  bar_index))
+if fh.get(0).v.size() > 3
+    fh.get(0).v.pop()
+if fl.get(0).v.size() > 3
+    fl.get(0).v.pop()
+
+_wTop = fh.detect('bull', _wDepth)   // swing high pivot
+_wBtm = fl.detect('bear', _wDepth)   // swing low pivot
+
+_wMax = obUseBody ? math.max(close, open) : high
+_wMin = obUseBody ? math.min(close, open) : low
+
+//-------------------------- OB detection
+var array<w_ob> g_bullish = array.new<w_ob>(0)
+var array<w_ob> g_bearish = array.new<w_ob>(0)
+w_bull_break_conf = 0
+w_bear_break_conf = 0
+
+
+// Bullish (REPLACE WHOLE BLOCK)
+if close > _wTop.y and not _wTop.crossed
+    int span = f_span_from_pivot(_wTop.x, obMaxScan)
+    int k    = f_pick_ob_k_bull(span, _wMin, _wMax)
+
+
+    // k 방어: 미래/범위초과/초기바 부족 모두 차단
+    bool ok_k = (not na(k)) and (k >= 1) and (k <= span) and (k <= 5000) and (bar_index >= k)
+
+    if ok_k
+        _wTop.crossed := true
+
+        float _minima = _wMin[k]
+        float _maxima = _wMax[k]
+        int   _loc    = time[k]
+
+        float rng0 = high[k] - low[k]
+        float bod0 = math.abs(close[k] - open[k])
+        float up0  = high[k] - math.max(open[k], close[k])
+        float dn0  = math.min(open[k], close[k]) - low[k]
+
+        array.unshift(g_bullish, w_ob.new(_maxima, _minima, _loc, false, na, bar_index[k], rng0, bod0, up0, dn0))
+
+
+
+// === PATCH[OB:reverse_loop_while] Bullish scan (remove-safe, step>0 constraint) ===
+if array.size(g_bullish) > 0
+    int i = array.size(g_bullish) - 1
+    while i >= 0
+        w_ob _e = array.get(g_bullish, i)
+
+        bool changed = false
+        bool removed = false
+
+        if not _e.breaker
+            if math.min(close, open) < _e.btm
+                _e.breaker   := true
+                _e.break_loc := time
+                changed := true
+        else
+            if close > _e.top
+                array.remove(g_bullish, i)
+                removed := true
+            else
+                // na 가드(안전)
+                if i < obShowBull and not na(_wTop.y) and _wTop.y < _e.top and _wTop.y > _e.btm
+                    w_bull_break_conf := 1
+
+        // write-back (remove 안 했을 때 + 변경 있었을 때만)
+        if not removed and changed
+            array.set(g_bullish, i, _e)
+
+        i -= 1
+
+
+// Bearish (REPLACE WHOLE BLOCK)
+if close < _wBtm.y and not _wBtm.crossed
+    int span = f_span_from_pivot(_wBtm.x, obMaxScan)
+    int k    = f_pick_ob_k_bear(span, _wMin, _wMax)
+
+
+    bool ok_k = (not na(k)) and (k >= 1) and (k <= span) and (k <= 5000) and (bar_index >= k)
+
+    if ok_k
+        _wBtm.crossed := true
+
+        float _maxima = _wMax[k]
+        float _minima = _wMin[k]
+        int   _loc    = time[k]
+
+        float rng0 = high[k] - low[k]
+        float bod0 = math.abs(close[k] - open[k])
+        float up0  = high[k] - math.max(open[k], close[k])
+        float dn0  = math.min(open[k], close[k]) - low[k]
+
+        array.unshift(g_bearish, w_ob.new(_maxima, _minima, _loc, false, na, bar_index[k], rng0, bod0, up0, dn0))
+
+
+// === PATCH[OB:reverse_loop_while] Bearish scan (remove-safe, step>0 constraint) ===
+if array.size(g_bearish) > 0
+    int i = array.size(g_bearish) - 1
+    while i >= 0
+        w_ob _e = array.get(g_bearish, i)
+
+        bool changed = false
+        bool removed = false
+
+        if not _e.breaker
+            if math.max(close, open) > _e.top
+                _e.breaker   := true
+                _e.break_loc := time
+                changed := true
+        else
+            if close < _e.btm
+                array.remove(g_bearish, i)
+                removed := true
+            else
+                if i < obShowBear and not na(_wBtm.y) and _wBtm.y > _e.btm and _wBtm.y < _e.top
+                    w_bear_break_conf := 1
+
+        if not removed and changed
+            array.set(g_bearish, i, _e)
+
+        i -= 1
+
+
+// 폴라리티 라벨(옵션)
+if w_bull_break_conf > nz(w_bull_break_conf[1]) and obShowLabels
+    label.new(_wTop.x, _wTop.y, '▼', color=na, textcolor=f_notransp(obBearCss), style=label.style_label_down, size=size.tiny)
+if w_bear_break_conf > nz(w_bear_break_conf[1]) and obShowLabels
+    label.new(_wBtm.x, _wBtm.y, '▲', color=na, textcolor=f_notransp(obBullCss), style=label.style_label_up,   size=size.tiny)
+// === PATCH[OB:trim_cap_ttl] ===
+f_trim_ob_list(array<w_ob> lst) =>
+    // cap: newest-first(unshift) 이므로 pop()이 가장 오래된 것
+    while array.size(lst) > obMaxKeep
+        array.pop(lst)
+
+    if obTtlBars > 0
+        int i = array.size(lst) - 1
+        while i >= 0
+            w_ob e = array.get(lst, i)
+            int age = na(e.idx) ? 0 : (bar_index - e.idx)
+            if age > obTtlBars
+                array.remove(lst, i)
+            i -= 1
+
+if barstate.isconfirmed
+    f_trim_ob_list(g_bullish)
+    f_trim_ob_list(g_bearish)
+
+//-------------------------- 안전 렌더링(우리 것만 삭제/재생성)
+var array<box>  g_ob_bull_bx  = array.new_box(0)
+var array<line> g_ob_bull_top = array.new_line(0)
+var array<line> g_ob_bull_btm = array.new_line(0)
+var array<line> g_ob_bull_mid = array.new_line(0)
+
+var array<box>  g_ob_bear_bx  = array.new_box(0)
+var array<line> g_ob_bear_top = array.new_line(0)
+var array<line> g_ob_bear_btm = array.new_line(0)
+var array<line> g_ob_bear_mid = array.new_line(0)
+
+f_clear_boxes_and_lines(_bxArr, _ltArr, _lbArr, _lmArr) =>
+    // 우리 배열에 든 오브젝트만 안정적으로 제거: while-pop 패턴 (인덱스 접근 없음)
+    // 1) 박스
+    while array.size(_bxArr) > 0
+        _bx = array.pop(_bxArr)
+        box.delete(_bx)
+    // 2) 라인(상단)
+    while array.size(_ltArr) > 0
+        _ln = array.pop(_ltArr)
+        line.delete(_ln)
+    // 3) 라인(하단)
+    while array.size(_lbArr) > 0
+        _ln = array.pop(_lbArr)
+        line.delete(_ln)
+    // 4) 라인(미드)
+    while array.size(_lmArr) > 0
+        _ln = array.pop(_lmArr)
+        line.delete(_ln)
+
+
+f_render_side(_list, _nToShow, _css, _breakCss, _bxArr, _ltArr, _lbArr, _lmArr) =>
+    // 최신 N개만 그리기
+    _N = math.min(_nToShow-1, array.size(_list)-1)
+    if _N >= 0
+        for i = 0 to _N
+            _e = array.get(_list, i)
+            _avg = math.avg(_e.top, _e.btm)
+            if _e.breaker
+                array.push(_bxArr, box.new(_e.loc, _e.top, _e.break_loc, _e.btm, _css, bgcolor=_css, xloc=xloc.bar_time))
+                array.push(_ltArr, line.new(_e.break_loc, _e.top, time+1, _e.top, xloc=xloc.bar_time, extend=extend.right, color=_breakCss))
+                array.push(_lbArr, line.new(_e.break_loc, _e.btm, time+1, _e.btm, xloc=xloc.bar_time, extend=extend.right, color=_breakCss))
+                array.push(_lmArr, line.new(_e.loc, _avg, time+1, _avg, xloc=xloc.bar_time, extend=extend.right, color=f_notransp(_breakCss), style=line.style_dotted))
+            else
+                array.push(_bxArr, box.new(_e.loc, _e.top, time, _e.btm, na, bgcolor=_css, extend=extend.right, xloc=xloc.bar_time))
+                array.push(_ltArr, line.new(_e.loc, _e.top, time+1, _e.top, xloc=xloc.bar_time, extend=extend.right, color=_css))
+                array.push(_lbArr, line.new(_e.loc, _e.btm, time+1, _e.btm, xloc=xloc.bar_time, extend=extend.right, color=_css))
+                array.push(_lmArr, line.new(_e.loc, _avg, time+1, _avg, xloc=xloc.bar_time, extend=extend.right, color=f_notransp(_css), style=line.style_dotted))
+
+if barstate.islast and barstate.isconfirmed
+    // Bull
+    f_clear_boxes_and_lines(g_ob_bull_bx, g_ob_bull_top, g_ob_bull_btm, g_ob_bull_mid)
+    if obShowBull > 0
+        f_render_side(g_bullish, obShowBull, obBullCss, obBullBreakCss, g_ob_bull_bx, g_ob_bull_top, g_ob_bull_btm, g_ob_bull_mid)
+
+    // Bear
+    f_clear_boxes_and_lines(g_ob_bear_bx, g_ob_bear_top, g_ob_bear_btm, g_ob_bear_mid)
+    if obShowBear > 0
+        f_render_side(g_bearish, obShowBear, obBearCss, obBearBreakCss, g_ob_bear_bx, g_ob_bear_top, g_ob_bear_btm, g_ob_bear_mid)
+// NOTE: OB/BB rendering is performed at the end of the script (after OI helpers)
+// so we can print Volume/Liquidity/OI metrics inside the boxes without forward references.
+//-------------------------- OB/BB Alerts (선택)
+const string MSG_OB_BULL_BREAK = "OB/BB: Bullish Breaker Confirmed"
+const string MSG_OB_BEAR_BREAK = "OB/BB: Bearish Breaker Confirmed"
+
+ob_bull_break_evt = w_bull_break_conf > nz(w_bull_break_conf[1])
+ob_bear_break_evt = w_bear_break_conf > nz(w_bear_break_conf[1])
+
+alertcondition(ob_bull_break_evt, "OB Bull Break Confirmed", MSG_OB_BULL_BREAK)
+alertcondition(ob_bear_break_evt, "OB Bear Break Confirmed", MSG_OB_BEAR_BREAK)
+
+if use_alerts and barstate.isconfirmed
+    if ob_bull_break_evt
+        alert('{"tag":"OBBB","event":"BULL_BREAK_CONF","sym":"'+syminfo.ticker+'","tf":"'+timeframe.period+'","px":'+str.tostring(close)+',"ts":'+str.tostring(time)+'}', alert.freq_once_per_bar_close)
+    if ob_bear_break_evt
+        alert('{"tag":"OBBB","event":"BEAR_BREAK_CONF","sym":"'+syminfo.ticker+'","tf":"'+timeframe.period+'","px":'+str.tostring(close)+',"ts":'+str.tostring(time)+'}', alert.freq_once_per_bar_close)
+
+// =============================== ATE — Adaptive Targeting Engine ===============================
+
+
+// Z(거리/σ) × W(OB폭/σ) × B(브레이커 여부) → 베타 테이블
+const int ZB = 6     // 기존 z bin과 동일: 0.5,1,1.5,2,3,∞
+const int WB = 3     // 폭 구간 3개: 0.5,1.0,∞
+var array<float> g_w_edges = array.from(0.5, 1.0, 1e9)
+
+// 베타 사전 및 시계열 합
+var array<float> g_beta_a2 = array.new_float(ZB*WB*2, 1.0)   // α
+var array<float> g_beta_b2 = array.new_float(ZB*WB*2, 1.0)   // β
+var float g_trials_total   = 1.0
+// === PATCH[Bandit:regime_state] — Trend / Chop 별 테이블
+var array<float> g_beta_a2_trend = array.new_float(ZB*WB*2, 1.0)
+var array<float> g_beta_b2_trend = array.new_float(ZB*WB*2, 1.0)
+var array<float> g_beta_a2_chop  = array.new_float(ZB*WB*2, 1.0)
+var array<float> g_beta_b2_chop  = array.new_float(ZB*WB*2, 1.0)
+
+var float g_trials_trend = 1.0
+var float g_trials_chop  = 1.0
+
+// 동적 SL 보정
+group_dsl   = "ATE • Dynamic SL"
+dsl_use     = input.bool(true, "Enable Dynamic SL (OB-aware)", group=group_dsl)
+dsl_min     = input.float(0.75, "Min SL factor", minval=0.1, step=0.05, group=group_dsl)
+dsl_max     = input.float(2.00, "Max SL factor", minval=0.2, step=0.05, group=group_dsl)
+// === CHOCH 평가 (CHOCH → TP 전략 성능 측정) ===
+// ANCHOR[ATE:eval_inputs]
+group_eval   = "ATE • CHOCH Eval"
+eval_enable  = input.bool(true,  "Enable CHOCH→TP stats",                group=group_eval)
+eval_scope   = input.string("Intermediate Term", "Eval Scope (CHOCH MS)", options = ["Short Term","Intermediate Term","Long Term"], group=group_eval)
+// === PATCH[ATE:fail_split_inputs] ===
+group_fail = "ATE • Fail Split"
+ate_timeout_w = input.float(0.25, "Timeout penalty weight (0..1)", minval=0.0, maxval=1.0, step=0.05, group=group_fail)
+// === PATCH[ATE:flip_mode_inputs] ===
+group_flip = "ATE • Regime Flip Policy"
+ate_flip_mode = input.string("CHOCH dir mismatch", "Flip when",
+     options=["CHOCH only","CHOCH dir mismatch"], group=group_flip)
+
+
+// ANCHOR[ATE:helpers] 바로 아래에 추가
+f_has_ob_candidates() =>
+    // 현재 추세 방향과 무관하게, 양방향 OB 중 하나라도 존재하면 true
+    (array.size(g_bullish) > 0) or (array.size(g_bearish) > 0)
+// ===== Context bins & indexing (Z × W × B) =====
+f_bin_w(float w) =>
+    int idx = WB-1
+    for j = 0 to WB-1
+        if w < array.get(g_w_edges, j)
+            idx := j, break
+    idx
+
+f_idx3(int zbin, int wbin, bool brk) =>
+    // zbin∈[0..ZB-1], wbin∈[0..WB-1], brk∈{0,1}
+    zbin*WB*2 + wbin*2 + (brk ? 1 : 0)
+
+f_prob_from_beta3(int zbin, int wbin, bool brk, float p_trend) =>
+    int k = f_idx3(zbin, wbin, brk)
+
+    bool isTrend = use_regime_bandit and p_trend >= reg_trend_hi
+    bool isChop  = use_regime_bandit and p_trend <= reg_chop_lo
+
+    float a = na
+    float b = na
+
+    if isTrend
+        a := array.get(g_beta_a2_trend, k)
+        b := array.get(g_beta_b2_trend, k)
+    else if isChop
+        a := array.get(g_beta_a2_chop, k)
+        b := array.get(g_beta_b2_chop, k)
+    else
+        a := array.get(g_beta_a2, k)
+        b := array.get(g_beta_b2, k)
+
+    a / math.max(a + b, EPS)
+
+
+f_update_beta3_regime(int zbin, int wbin, bool brk, bool hit,
+                      float trials_total, float trials_tr, float trials_ch, float p_trend) =>
+    int k = f_idx3(zbin, wbin, brk)
+
+    // --- 로컬 카운터 복사본 (함수 인자는 불변이므로 직접 += 불가) ---
+    float tt  = trials_total
+    float ttr = trials_tr
+    float tch = trials_ch
+
+    // 1) 전체 테이블 (g_beta_a2 / g_beta_b2)
+    float a_all = array.get(g_beta_a2, k)
+    float b_all = array.get(g_beta_b2, k)
+    if hit
+        array.set(g_beta_a2, k, a_all + 1.0)
+    else
+        array.set(g_beta_b2, k, b_all + 1.0)
+    tt += 1.0
+
+    // 2) 레짐별 테이블
+    bool isTrend = use_regime_bandit and p_trend >= reg_trend_hi
+    bool isChop  = use_regime_bandit and p_trend <= reg_chop_lo
+
+    if isTrend
+        float a_tr = array.get(g_beta_a2_trend, k)
+        float b_tr = array.get(g_beta_b2_trend, k)
+        if hit
+            array.set(g_beta_a2_trend, k, a_tr + 1.0)
+        else
+            array.set(g_beta_b2_trend, k, b_tr + 1.0)
+        ttr += 1.0
+    else if isChop
+        float a_ch = array.get(g_beta_a2_chop, k)
+        float b_ch = array.get(g_beta_b2_chop, k)
+        if hit
+            array.set(g_beta_a2_chop, k, a_ch + 1.0)
+        else
+            array.set(g_beta_b2_chop, k, b_ch + 1.0)
+        tch += 1.0
+
+    [tt, ttr, tch]
+
+
+
+// 지수 망각(비정상성 대응) — 성능 비용 줄이려고 주기적으로 실행
+f_decay_betas(float trials_total, float trials_tr, float trials_ch) =>
+    for k = 0 to array.size(g_beta_a2)-1
+        array.set(g_beta_a2,       k, array.get(g_beta_a2,       k) * gamma_decay)
+        array.set(g_beta_b2,       k, array.get(g_beta_b2,       k) * gamma_decay)
+        array.set(g_beta_a2_trend, k, array.get(g_beta_a2_trend, k) * gamma_decay)
+        array.set(g_beta_b2_trend, k, array.get(g_beta_b2_trend, k) * gamma_decay)
+        array.set(g_beta_a2_chop,  k, array.get(g_beta_a2_chop,  k) * gamma_decay)
+        array.set(g_beta_b2_chop,  k, array.get(g_beta_b2_chop,  k) * gamma_decay)
+    [math.max(1.0, trials_total * gamma_decay),
+     math.max(1.0, trials_tr    * gamma_decay),
+     math.max(1.0, trials_ch    * gamma_decay)]
+
+
+// 결정적 의사-난수(Thompson 근사용 노이즈; Box–Muller 없이 분산 스케일만)
+f_qrand(float seed) =>
+    // fractional part of sin hashing
+    float x = math.sin(seed)*43758.5453
+    x - math.floor(x)  // ∈[0,1)
+
+f_ts_like(float p_hat, float n_eff, float seed) =>
+    // Beta(α,β) 분산 ≈ p(1-p)/(α+β+1) → 표준편차 근사
+    float sd = math.sqrt(math.max(p_hat*(1.0-p_hat) / math.max(n_eff+1.0, 1.0), 0.0))
+    float u  = 2.0*f_qrand(seed) - 1.0 // ~U[-1,1]
+    f_clamp(p_hat + sd*u, 0.0, 1.0)
+
+
+// UCB 상신뢰경계
+f_ucb(float p_hat, float n_eff, float trials) =>
+    p_hat + ucb_c * math.sqrt(math.max(math.log(math.max(trials, 1.0)) / math.max(n_eff, 1.0), 0.0))
+
+
+// 후보 특징 추출: (z, w, brk, zbin, wbin, p_hat, n_eff, p_ts, p_ucb)
+f_score_from_bins(float z, float w, bool brk, int zbin, int wbin, float seed, float p_trend) =>
+    int k = f_idx3(zbin, wbin, brk)
+
+    bool isTrend = use_regime_bandit and p_trend >= reg_trend_hi
+    bool isChop  = use_regime_bandit and p_trend <= reg_chop_lo
+
+    float a = na
+    float b = na
+    float trials = na
+
+    if isTrend
+        a := array.get(g_beta_a2_trend, k)
+        b := array.get(g_beta_b2_trend, k)
+        trials := g_trials_trend
+    else if isChop
+        a := array.get(g_beta_a2_chop, k)
+        b := array.get(g_beta_b2_chop, k)
+        trials := g_trials_chop
+    else
+        a := array.get(g_beta_a2, k)
+        b := array.get(g_beta_b2, k)
+        trials := g_trials_total
+
+    float n = math.max(a + b, 1.0)
+    float p = a / n
+    float p_ts  = f_ts_like(p, n, seed)
+    float p_ucb = f_ucb(p, n, trials)
+
+    float atten = math.exp(-ate_lambda * z)
+    float use_p = bandit_mode == "TS" ? p_ts : bandit_mode == "UCB" ? p_ucb : math.max(p_ts, p_ucb)
+    [use_p * atten, p, n, p_ts, p_ucb]
+
+// === HTS: light top/bottom quality score
+f_hts_score(float z, float w, bool brk, int ageBars, float bodyRatio, float wickSkew) =>
+    // 0~1 정규화된 특징들의 가중합 (가중치는 입력으로 빼도 됨)
+    float s_z   = math.exp(-0.25*z)                  // 멀수록 감점, 너무 가까우면 노이즈 → 0.25~0.35 조정
+    float s_w   = f_clamp(1.0 - f_clamp(w,0,2.0)/2.0, 0.0, 1.0)
+    float s_b   = brk ? 1.0 : 0.7                    // 브레이커 우대
+    float s_age = math.exp(-0.01*ageBars)            // 오래될수록 감점
+    float s_bd  = f_clamp(bodyRatio, 0.0, 1.0)       // 실체가 큰 캔들 선호
+    float s_wk  = f_clamp(1.0 - math.abs(wickSkew),0,1) // 비대칭 심하면 감점
+    // 종합
+    0.30*s_z + 0.20*s_w + 0.20*s_b + 0.15*s_age + 0.10*s_bd + 0.05*s_wk
+
+// 폭/나이 반영 동적 SL 팩터
+// === PATCH A: OOB 불가 · 조기 반환 · 런타임 크기 재확인 ===
+f_dyn_sl_factor(bool isLong, float _ate_dev) =>
+    if not dsl_use
+        1.0
+    else
+        float best = na
+        float width = na
+
+        // 현재 크기를 고정 스냅샷 → 루프 중 크기 줄어들어도 OOB 방어
+        int nBull = array.size(g_bullish)
+        int nBear = array.size(g_bearish)
+
+        if isLong
+            if nBull == 0
+                1.0
+            else
+                for i = 0 to nBull - 1
+                    if i >= array.size(g_bullish)
+                        break
+                    w_ob e = array.get(g_bullish, i)
+                    if e.btm <= close and (na(best) or e.btm > best)
+                        best := e.btm
+                        width := math.max(e.top - e.btm, EPS)
+                float ratio = na(width) ? 1.0 : f_clamp(width / math.max(_ate_dev, EPS), dsl_min, dsl_max)
+                ratio
+        else
+            if nBear == 0
+                1.0
+            else
+                for i = 0 to nBear - 1
+                    if i >= array.size(g_bearish)
+                        break
+                    w_ob e = array.get(g_bearish, i)
+                    if e.top >= close and (na(best) or e.top < best)
+                        best := e.top
+                        width := math.max(e.top - e.btm, EPS)
+                float ratio = na(width) ? 1.0 : f_clamp(width / math.max(_ate_dev, EPS), dsl_min, dsl_max)
+                ratio
+
+
+
+f_pick_state(_scope)=>
+    int   _type = 0
+    bool  _conf = false
+    int   _prev = 0
+    if _scope == "Short Term"
+        _type := nz(stMS.type, 0), _conf := st_confirm_now, _prev := st_prev
+    else if _scope == "Intermediate Term"
+        _type := nz(itMS.type, 0), _conf := it_confirm_now, _prev := it_prev
+    else
+        _type := nz(ltMS.type, 0), _conf := lt_confirm_now, _prev := lt_prev
+    [_type, _conf, _prev]
+
+
+// 내부 선택: dev & 구조 핸들 (AMS와 동일한 safe-dev 사용)
+f_pick_dev_and_state(_scope)=>
+    float _dev = na
+    int   _type = 0
+    bool  _conf_now = false
+    int   _prev = 0
+    if _scope == "Short Term"
+        _dev := st_dev_safe, _type := nz(stMS.type, 0), _conf_now := st_confirm_now, _prev := st_prev
+    else if _scope == "Intermediate Term"
+        _dev := it_dev_safe, _type := nz(itMS.type, 0), _conf_now := it_confirm_now, _prev := it_prev
+    else
+        _dev := lt_dev_safe, _type := nz(ltMS.type, 0), _conf_now := lt_confirm_now, _prev := lt_prev
+    [_dev, _type, _conf_now, _prev]
+// === PATCH[OB:touch_detect] ===
+// 반환: [touched, side(+1 bull/support / -1 bear/resist), top, btm, brk, width, penetration(0..1)]
+f_ob_touch(float dev, float bufK, int scanN)=>
+    float buf = bufK * math.max(dev, EPS)
+
+    bool  touched = false
+    int   side    = 0
+    float zTop    = na
+    float zBtm    = na
+    bool  zBrk    = false
+    float bestD   = na
+    float pen     = na
+    float wid     = na
+
+    int nBull = array.size(g_bullish)
+    int nBear = array.size(g_bearish)
+
+    int limB = math.min(nBull, scanN)
+    if limB > 0
+        for i = 0 to limB - 1
+            if i >= array.size(g_bullish)
+                break
+            w_ob e = array.get(g_bullish, i)
+            float top = e.top
+            float btm = e.btm
+            if close >= (btm - buf) and close <= (top + buf)
+                float mid = math.avg(top, btm)
+                float d   = math.abs(close - mid)
+                if na(bestD) or d < bestD
+                    bestD := d
+                    touched := true
+                    side := +1
+                    zTop := top
+                    zBtm := btm
+                    zBrk := e.breaker
+                    wid  := math.max(top - btm, EPS)
+                    pen  := f_clamp((close - btm) / wid, 0.0, 1.0)
+
+    int limS = math.min(nBear, scanN)
+    if limS > 0
+        for i = 0 to limS - 1
+            if i >= array.size(g_bearish)
+                break
+            w_ob e = array.get(g_bearish, i)
+            float top = e.top
+            float btm = e.btm
+            if close >= (btm - buf) and close <= (top + buf)
+                float mid = math.avg(top, btm)
+                float d   = math.abs(close - mid)
+                if na(bestD) or d < bestD
+                    bestD := d
+                    touched := true
+                    side := -1
+                    zTop := top
+                    zBtm := btm
+                    zBrk := e.breaker
+                    wid  := math.max(top - btm, EPS)
+                    pen  := f_clamp((close - btm) / wid, 0.0, 1.0)
+
+    [touched, side, zTop, zBtm, zBrk, wid, pen]
+// === PATCH[ATE:zone_penetration] ===
+f_zone_pen(float top, float btm)=>
+    float wid = math.max(top - btm, EPS)
+    f_clamp((close - btm) / wid, 0.0, 1.0)
+
+// === PATCH[OBR:active_zone_mode_input] ===
+group_obr2 = "OBR • Zone Context"
+obr_active_use_target_zone = input.bool(true, "ACTIVE: use target-OB zone (else touch zone)", group=group_obr2)
+
+// ============================================================================
+// === PATCH[OI:presets_helpers] — helpers used by f_oiClose()
+// ============================================================================
+f_ticker_from_tickerid(string tid)=>
+    array<string> parts = str.split(tid, ":")
+    array.size(parts) >= 2 ? array.get(parts, 1) : tid
+
+f_oi_symbol(string ex, string ticker)=>
+    ex == "" ? "" : (ex + ":" + ticker + "_OI")
+
+f_pick_ex_from_preset(int slot)=>
+    string ex = ""
+    if oi_preset == "BINANCE+BYBIT+OKX"
+        ex := slot==1 ? "BINANCE" : slot==2 ? "BYBIT" : slot==3 ? "OKX" : ""
+    else if oi_preset == "BINANCE+BYBIT"
+        ex := slot==1 ? "BINANCE" : slot==2 ? "BYBIT" : ""
+    else if oi_preset == "BINANCE+OKX"
+        ex := slot==1 ? "BINANCE" : slot==2 ? "OKX" : ""
+    else if oi_preset == "BYBIT+OKX"
+        ex := slot==1 ? "BYBIT" : slot==2 ? "OKX" : ""
+    else if oi_preset == "Custom(1..5)"
+        ex := slot==1 ? oi_preset_custom1 :
+              slot==2 ? oi_preset_custom2 :
+              slot==3 ? oi_preset_custom3 :
+              slot==4 ? oi_preset_custom4 :
+              slot==5 ? oi_preset_custom5 : ""
+    else
+        ex := ""
+    ex
+
+f_is_dup_ex(string ex, string a, string b, string c, string d, string e)=>
+    ex != "" and (ex == a or ex == b or ex == c or ex == d or ex == e)
+
+f_req_oi_ff(string sym, string tf)=>
+    float x = request.security(sym, tf, close,
+         gaps=barmerge.gaps_on, lookahead=barmerge.lookahead_off, ignore_invalid_symbol=true)
+    nz(x, x[1])
+
+f_req_oi_best(string symA, string symB, string tf)=>
+    float a = (symA == "") ? na : f_req_oi_ff(symA, tf)
+    if not na(a)
+        a
+    else
+        float b = (symB == "" or symB == symA) ? na : f_req_oi_ff(symB, tf)
+        b
+
+//=============================================================================
+// [patch] OI source (Safe) + Aggregated OI (multi-exchange, preset-aware)
+//  - Chart (single): syminfo.tickerid + "_OI"
+//  - Aggregated: preset auto symbols OR manual oi_agg_sym1..5 (existing inputs)
+//=============================================================================
+f_oiClose(string tf_in) =>
+    string tf = (oi_tf_override == "" ? tf_in : oi_tf_override)
+
+    // chart OI (forward-fill)
+    float oi_chart = request.security(
+         syminfo.tickerid + "_OI",
+         tf,
+         close,
+         gaps      = barmerge.gaps_on,
+         lookahead = barmerge.lookahead_off,
+         ignore_invalid_symbol = true)
+    oi_chart := nz(oi_chart, oi_chart[1])
+
+    // preset "Chart only" forces single-source
+    if oi_preset_enable and (oi_preset == "Chart only")
+        oi_chart
+    else if oi_src_mode == "Chart (single)"
+        oi_chart
+    else
+        float s   = 0.0
+        bool  any = false
+
+        // base ticker from chart (or override)
+        string tick0 = (oi_ticker_override == "" ? f_ticker_from_tickerid(syminfo.tickerid) : oi_ticker_override)
+        string tick1 = oi_preset_try_noP ? str.replace(tick0, ".P", "") : tick0
+
+        // include chart OI
+        if oi_agg_includeChart and not na(oi_chart)
+            s   += oi_chart
+            any := true
+
+        // chart exchange (dedup)
+        string chartEx = syminfo.prefix
+
+        if oi_preset_enable
+            // preset exchanges
+            string ex1 = f_pick_ex_from_preset(1)
+            string ex2 = f_pick_ex_from_preset(2)
+            string ex3 = f_pick_ex_from_preset(3)
+            string ex4 = f_pick_ex_from_preset(4)
+            string ex5 = f_pick_ex_from_preset(5)
+
+            // avoid double counting chart exchange if already included
+            if oi_agg_includeChart and ex1 == chartEx
+                ex1 := ""
+            if oi_agg_includeChart and ex2 == chartEx
+                ex2 := ""
+            if oi_agg_includeChart and ex3 == chartEx
+                ex3 := ""
+            if oi_agg_includeChart and ex4 == chartEx
+                ex4 := ""
+            if oi_agg_includeChart and ex5 == chartEx
+                ex5 := ""
+
+            // slot1
+            if ex1 != ""
+                float o1 = f_req_oi_best(f_oi_symbol(ex1, tick0), f_oi_symbol(ex1, tick1), tf)
+                if not na(o1)
+                    s += o1, any := true
+
+            // slot2 (dedup vs ex1)
+            if ex2 != "" and not f_is_dup_ex(ex2, ex1, "", "", "", "")
+                float o2 = f_req_oi_best(f_oi_symbol(ex2, tick0), f_oi_symbol(ex2, tick1), tf)
+                if not na(o2)
+                    s += o2, any := true
+
+            // slot3 (dedup vs ex1,ex2)
+            if ex3 != "" and not f_is_dup_ex(ex3, ex1, ex2, "", "", "")
+                float o3 = f_req_oi_best(f_oi_symbol(ex3, tick0), f_oi_symbol(ex3, tick1), tf)
+                if not na(o3)
+                    s += o3, any := true
+
+            // slot4 (dedup vs ex1..ex3)
+            if ex4 != "" and not f_is_dup_ex(ex4, ex1, ex2, ex3, "", "")
+                float o4 = f_req_oi_best(f_oi_symbol(ex4, tick0), f_oi_symbol(ex4, tick1), tf)
+                if not na(o4)
+                    s += o4, any := true
+
+            // slot5 (dedup vs ex1..ex4)
+            if ex5 != "" and not f_is_dup_ex(ex5, ex1, ex2, ex3, ex4, "")
+                float o5 = f_req_oi_best(f_oi_symbol(ex5, tick0), f_oi_symbol(ex5, tick1), tf)
+                if not na(o5)
+                    s += o5, any := true
+
+        else
+            // manual symbols (existing inputs)
+            float o1 = (oi_agg_sym1 == "") ? na : f_req_oi_best(oi_agg_sym1, "", tf)
+            float o2 = (oi_agg_sym2 == "") ? na : f_req_oi_best(oi_agg_sym2, "", tf)
+            float o3 = (oi_agg_sym3 == "") ? na : f_req_oi_best(oi_agg_sym3, "", tf)
+            float o4 = (oi_agg_sym4 == "") ? na : f_req_oi_best(oi_agg_sym4, "", tf)
+            float o5 = (oi_agg_sym5 == "") ? na : f_req_oi_best(oi_agg_sym5, "", tf)
+
+            if not na(o1)
+                s += o1, any := true
+            if not na(o2)
+                s += o2, any := true
+            if not na(o3)
+                s += o3, any := true
+            if not na(o4)
+                s += o4, any := true
+            if not na(o5)
+                s += o5, any := true
+
+        any ? s : na
+
+
+// === PATCH[OBR:core] ===
+// dir: +1 기대상승 / -1 기대하락
+// zone: [top, btm]
+// 반환: [p_break, p_rej, break_conf, rej_conf, absorption_flag]
+f_obr_eval(int dir, float top, float btm, float dev, float pen)=>
+    float rng = high - low
+    float rr  = rng / math.max(dev, EPS)
+    float rr_z = f_zscore(rr, obr_zlen)
+
+    float v   = math.log(math.max(volume, 1.0))
+    float vol_z = f_zscore(v, obr_zlen)
+
+    // OI / LTF delta
+    float doi_z = 0.0
+    if obr_use_oi
+        float oi0 = f_oiClose(timeframe.period)
+        if not na(oi0) and not na(oi0[1])
+            float doi = oi0 - oi0[1]
+            doi_z := f_zscore(doi, obr_zlen)
+
+
+
+    float dlt = f_ltf_delta(obr_ltf)
+    float dlt_z = f_zscore(dlt, obr_zlen)
+
+    bool absorption = (vol_z >= obr_abs_volz) and (rr_z <= obr_abs_rrz)
+
+    float k = obr_conf_k * math.max(dev, EPS)
+    bool break_conf = dir == 1 ? (close > top + k) : (close < btm - k)
+    bool rej_conf   = dir == 1 ? (close < btm - k) : (close > top + k)
+
+    // wick 기반 “against-dir” 리젝션 플래그
+    float up_w = high - math.max(open, close)
+    float dn_w = math.min(open, close) - low
+    float wsum = math.max(up_w + dn_w, EPS)
+    float wick_skew = (up_w - dn_w) / wsum
+
+    bool wick_against = dir == 1 ? (high > top and close < top) : (low < btm and close > btm)
+
+    // 점수(개념식 → 실전용 단순화)
+    float break_score =
+         1.20 * (break_conf ? 1.0 : 0.0)
+       + 0.60 * rr_z
+       + 0.55 * (dlt_z * dir)
+       + 0.35 * (doi_z * dir)
+       + 0.45 * pen
+       - 0.80 * (absorption ? 1.0 : 0.0)
+       - 0.65 * (wick_against ? 1.0 : 0.0)
+
+    float rej_score =
+         1.10 * (wick_against ? 1.0 : 0.0)
+       + 0.70 * (absorption ? 1.0 : 0.0)
+       - 0.55 * (dlt_z * dir)
+       - 0.35 * (doi_z * dir)
+       + 0.35 * (1.0 - g_srf_p_trend)
+
+    float p_break = f_sigmoid(break_score)
+    float p_rej   = f_sigmoid(rej_score)
+
+    [p_break, p_rej, break_conf, rej_conf, absorption]
+
+// Beta-빈 세팅(거리/변동성 z 구간)
+const int ATE_BINS = 6
+var array<float> g_bin_edges = array.new_float()
+if barstate.isfirst
+    array.push(g_bin_edges, 0.5)
+    array.push(g_bin_edges, 1.0)
+    array.push(g_bin_edges, 1.5)
+    array.push(g_bin_edges, 2.0)
+    array.push(g_bin_edges, 3.0)
+    array.push(g_bin_edges, 1e9)
+
+var array<float> g_beta_a    = array.new_float(ATE_BINS, 1.0)   // α
+var array<float> g_beta_b    = array.new_float(ATE_BINS, 1.0)   // β
+// (타입 추론을 쓰고 싶다면 → var g_bin_edges = array.new_float() 도 가능)
+// PATCH : CHOCH-conditioned TP 통계
+var array<float> g_beta_ch_a = array.new_float(ATE_BINS, 1.0)
+var array<float> g_beta_ch_b = array.new_float(ATE_BINS, 1.0)
+// === PATCH[HTS:shape_state] — HTS-high vs 나머지 분리 베타
+var array<float> g_beta_ch_high_a = array.new_float(ATE_BINS, 1.0)
+var array<float> g_beta_ch_high_b = array.new_float(ATE_BINS, 1.0)
+var array<float> g_beta_ch_rest_a = array.new_float(ATE_BINS, 1.0)
+var array<float> g_beta_ch_rest_b = array.new_float(ATE_BINS, 1.0)
+
+// 온라인 80% 분위 추정 (Robbins–Monro)
+var float g_hts_q80     = 0.80
+const float HTS_Q_ALPHA = 0.05
+
+// 개별 CHOCH 시퀀스 평가 상태
+var bool  g_ch_eval_active   = false
+var float g_ch_eval_entry    = na
+var float g_ch_eval_sl       = na
+var float g_ch_eval_tp       = na
+var int   g_ch_eval_dir      = 0        // +1 long, -1 short
+var float g_ch_eval_z        = na       // 해당 TP 의 z-score
+var bool  g_ch_eval_hts_high = false
+var float g_ch_eval_hts_score = na
+// 방향별 R-multiple 누적 (기댓값 추정용)
+var float g_ch_Rsum_long     = 0.0
+var float g_ch_Rsum_short    = 0.0
+var float g_ch_Rcnt_long     = 1.0      // 0 나눗셈 방지용 1.0
+var float g_ch_Rcnt_short    = 1.0
+
+
+f_bin_idx(float z)=>
+    int idx = ATE_BINS-1
+    for j = 0 to ATE_BINS-1
+        if z < array.get(g_bin_edges, j)
+            idx := j, break
+    idx
+// === ANCHOR[ATE:helpers_beta_cut]
+// === PATCH[ATE:bandit_cut_inputs] ===
+group_cut = "ATE • Arm Cut (Bandit Consistency)"
+ate_cut_n0 = input.float(10.0, "Cut warmup N0 (a+b <= N0 → 0.5)", minval=2.0, step=1.0, group=group_cut)
+ate_cut_k  = input.float(40.0, "Cut ramp K (N0..N0+K lerp to ate_min_p)", minval=5.0, step=5.0, group=group_cut)
+
+f_lerp01(float a, float b, float t) =>
+    a + (b - a) * f_clamp(t, 0.0, 1.0)
+
+f_cut_from_n(float n_eff) =>
+    n_eff <= ate_cut_n0 ? 0.5 : f_lerp01(0.5, ate_min_p, (n_eff - ate_cut_n0) / math.max(ate_cut_k, 1.0))
+
+f_beta3_ab(int zbin, int wbin, bool brk, float p_trend)=>
+    int k = f_idx3(zbin, wbin, brk)
+    bool isTrend = use_regime_bandit and p_trend >= reg_trend_hi
+    bool isChop  = use_regime_bandit and p_trend <= reg_chop_lo
+    float a = na
+    float b = na
+    if isTrend
+        a := array.get(g_beta_a2_trend, k)
+        b := array.get(g_beta_b2_trend, k)
+    else if isChop
+        a := array.get(g_beta_a2_chop, k)
+        b := array.get(g_beta_b2_chop, k)
+    else
+        a := array.get(g_beta_a2, k)
+        b := array.get(g_beta_b2, k)
+    [a, b]
+
+
+
+f_effective_min_cut(float z)=>
+    int j = f_bin_idx(z)
+    float a = array.get(g_beta_a, j)
+    float b = array.get(g_beta_b, j)
+    float n = a + b
+    // 사전만 있는 거의 미학습 구간(n≈2)이면 0.5로 완화하여 콜드스타트 해소
+    n <= 2.5 ? 0.5 : ate_min_p
+
+f_arm_cut(bool useB, float z, int zbin, int wbin, bool brk, float p_trend)=>
+    if useB
+        [a, b] = f_beta3_ab(zbin, wbin, brk, p_trend)
+        f_cut_from_n(a + b)
+    else
+        f_effective_min_cut(z)
+
+f_prob_from_beta(float z)=>
+    int j = f_bin_idx(z)
+    float a = array.get(g_beta_a, j), b = array.get(g_beta_b, j)
+    a / math.max(a + b, EPS)
+
+f_update_beta(float z, bool hit)=>
+    int j = f_bin_idx(z)
+    if hit
+        array.set(g_beta_a, j, array.get(g_beta_a, j) + 1.0)
+    else
+        array.set(g_beta_b, j, array.get(g_beta_b, j) + 1.0)
+
+f_prob_from_beta_ch(float z)=>
+    int j = f_bin_idx(z)
+    float a = array.get(g_beta_ch_a, j), b = array.get(g_beta_ch_b, j)
+    a / math.max(a + b, EPS)
+
+f_update_beta_ch(float z, bool hit)=>
+    int j = f_bin_idx(z)
+    float a = array.get(g_beta_ch_a, j), b = array.get(g_beta_ch_b, j)
+    if hit
+        array.set(g_beta_ch_a, j, a + 1.0)
+    else
+        array.set(g_beta_ch_b, j, b + 1.0)
+
+f_prob_from_beta_ch_shape(float z, bool isHigh)=>
+    int j = f_bin_idx(z)
+    float a = isHigh ? array.get(g_beta_ch_high_a, j) : array.get(g_beta_ch_rest_a, j)
+    float b = isHigh ? array.get(g_beta_ch_high_b, j) : array.get(g_beta_ch_rest_b, j)
+    a / math.max(a + b, EPS)
+
+f_update_beta_ch_shape(float z, bool hit, bool isHigh)=>
+    int j = f_bin_idx(z)
+    float a = isHigh ? array.get(g_beta_ch_high_a, j) : array.get(g_beta_ch_rest_a, j)
+    float b = isHigh ? array.get(g_beta_ch_high_b, j) : array.get(g_beta_ch_rest_b, j)
+    if hit
+        if isHigh
+            array.set(g_beta_ch_high_a, j, a + 1.0)
+        else
+            array.set(g_beta_ch_rest_a, j, a + 1.0)
+    else
+        if isHigh
+            array.set(g_beta_ch_high_b, j, b + 1.0)
+        else
+            array.set(g_beta_ch_rest_b, j, b + 1.0)
+// === PATCH[ATE:beta_weighted] ===
+f_update_beta_w(float z, bool hit, float w)=>
+    int j = f_bin_idx(z)
+    float ww = math.max(w, 0.0)
+    if hit
+        array.set(g_beta_a, j, array.get(g_beta_a, j) + ww)
+    else
+        array.set(g_beta_b, j, array.get(g_beta_b, j) + ww)
+
+f_update_beta_ch_w(float z, bool hit, float w)=>
+    int j = f_bin_idx(z)
+    float ww = math.max(w, 0.0)
+    if hit
+        array.set(g_beta_ch_a, j, array.get(g_beta_ch_a, j) + ww)
+    else
+        array.set(g_beta_ch_b, j, array.get(g_beta_ch_b, j) + ww)
+
+f_update_beta_ch_shape_w(float z, bool hit, bool isHigh, float w)=>
+    int j = f_bin_idx(z)
+    float ww = math.max(w, 0.0)
+    if hit
+        if isHigh
+            array.set(g_beta_ch_high_a, j, array.get(g_beta_ch_high_a, j) + ww)
+        else
+            array.set(g_beta_ch_rest_a, j, array.get(g_beta_ch_rest_a, j) + ww)
+    else
+        if isHigh
+            array.set(g_beta_ch_high_b, j, array.get(g_beta_ch_high_b, j) + ww)
+        else
+            array.set(g_beta_ch_rest_b, j, array.get(g_beta_ch_rest_b, j) + ww)
+
+// R-multiple helper: (reward / risk)
+// risk = |entry - SL|, reward = long: TP-entry, short: entry-TP
+f_R_multiple(bool isLong, float entry, float tp, float sl)=>
+    float risk   = math.max(math.abs(entry - sl), EPS)
+    float reward = isLong ? (tp - entry) : (entry - tp)
+    reward / risk
+    
+// === CHOCH-조건부 기대수익 E[R] 추정 ===
+//  - eval_enable 이 꺼져 있으면 na 반환
+//  - 각 방향별 CHOCH 평가 샘플이 10개 미만이면 콜드스타트로 간주하고 na
+//  - E[R] = p_ch(z) × R̄_dir  (R̄_dir: 해당 방향의 평균 R-multiple)
+f_ch_expected_R(bool isLong, float z)=>
+    if not eval_enable or na(z)
+        na
+    else
+        // g_ch_Rcnt_* 는 1.0 으로 시작하므로 실제 샘플 수는 (cnt - 1.0)
+        float nEff = isLong ? (g_ch_Rcnt_long - 1.0) : (g_ch_Rcnt_short - 1.0)
+        if nEff < 10
+            na    // 샘플 부족 → 컷 보정에 사용하지 않음
+        else
+            float p_ch = f_prob_from_beta_ch(z)
+            float R_avg = isLong ? (g_ch_Rsum_long  / math.max(g_ch_Rcnt_long,  1.0))
+                                 : (g_ch_Rsum_short / math.max(g_ch_Rcnt_short, 1.0))
+            p_ch * R_avg
+
+// 후보 스코어링
+f_score(float z)=>
+    float p = f_prob_from_beta(z)
+    p * math.exp(-ate_lambda * z)
+
+// === PATCH : call SRF each bar ===
+if use_srf
+    g_srf_p_trend := f_srf_update(g_srf_p_trend)
+
+
+// 현재 구조/변동성
+// dev와 상태 소스 분리
+[ate_dev, _, _, _]                 = f_pick_dev_and_state(ate_scope_dev)
+[ate_type, ate_conf_now, ate_prev_type] = f_pick_state(ate_scope_regime)
+// TP/SL 방향은 OB Side Scope로 결정
+int ate_ob_type = f_pick_type_confirmed(ate_scope_ob_side)
+trend_turn_now = ate_conf_now 
+// PATCH : CHOCH 확정 플래그 (evaluation 에서만 사용)
+// eval_scope 기준으로, 이번 bar 가 CHOCH 확정인지 체크
+bool  choch_conf_now = false
+int   choch_dir      = 0
+float choch_anchor   = na
+
+if eval_scope == "Short Term"
+    choch_conf_now := g_st_choch_conf
+    choch_dir      := nz(stMS.type, 0)
+    choch_anchor   := st_anchor
+else if eval_scope == "Intermediate Term"
+    choch_conf_now := g_it_choch_conf
+    choch_dir      := nz(itMS.type, 0)
+    choch_anchor   := it_anchor
+else
+    choch_conf_now := g_lt_choch_conf
+    choch_dir      := nz(ltMS.type, 0)
+    choch_anchor   := lt_anchor
+
+// 후보 생성: 추세↑ → 위쪽 Bear OB / 추세↓ → 아래쪽 Bull OB
+var float g_tp_price = na
+var float g_sl_price = na
+var int   g_tp_dir   = 0       // +1 up target, -1 down target
+var int   g_tp_start = na
+var float g_tp_z     = na
+var line  g_tp_line  = na
+var line  g_sl_line  = na
+var label g_tp_lab   = na
+
+var int   g_tp_zbin = na
+var int   g_tp_wbin = na
+var bool  g_tp_brk  = false
+var float g_tp_hts_score = na
+var bool  g_tp_hts_high  = false
+
+// === PATCH[C] / PATCH[ATE:store_target_ob_meta] ===============================
+// Selected target's source-OB meta snapshot (stable debug / future logic)
+var float g_tp_ob_top  = na
+var float g_tp_ob_btm  = na
+var int   g_tp_ob_side = 0     // +1 bull, -1 bear
+var int   g_tp_ob_idx  = na
+var float g_tp_ob_wsig = na   // (top-btm)/dev at ARM time
+// ============================================================================
+
+
+// REPLACE: one-liner helpers → multiline helpers
+f_try_delete_line(_ln) =>
+    if not na(_ln)
+        line.delete(_ln)
+
+f_try_delete_label(_lb) =>
+    if not na(_lb)
+        label.delete(_lb)
+
+
+// === PATCH[C] / PATCH[ATE:store_target_ob_meta] helper =======================
+// Find the exact OB that produced the target boundary price (within tolerance).
+// wantLong=true  → target from bearish OB top
+// wantLong=false → target from bullish OB btm
+// returns: [top, btm, idx, wSigma]
+f_ate_find_target_ob_meta(bool wantLong, float tpPx, float dev, int scanN)=>
+    float oTop  = na
+    float oBtm  = na
+    int   oIdx  = na
+    float oWsig = na
+    float bestD = na
+
+    int lim = 0
+    if wantLong
+        int n = array.size(g_bearish)
+        lim := math.min(n, scanN)
+        if lim > 0
+            for i = 0 to lim - 1
+                if i >= array.size(g_bearish)
+                    break
+                w_ob e = array.get(g_bearish, i)
+                float ref = e.top
+                float d = math.abs(ref - tpPx)
+                if na(bestD) or d < bestD
+                    bestD := d
+                    oTop  := e.top
+                    oBtm  := e.btm
+                    oIdx  := e.idx
+                    oWsig := math.max(e.top - e.btm, EPS) / math.max(dev, EPS)
+    else
+        int n = array.size(g_bullish)
+        lim := math.min(n, scanN)
+        if lim > 0
+            for i = 0 to lim - 1
+                if i >= array.size(g_bullish)
+                    break
+                w_ob e = array.get(g_bullish, i)
+                float ref = e.btm
+                float d = math.abs(ref - tpPx)
+                if na(bestD) or d < bestD
+                    bestD := d
+                    oTop  := e.top
+                    oBtm  := e.btm
+                    oIdx  := e.idx
+                    oWsig := math.max(e.top - e.btm, EPS) / math.max(dev, EPS)
+
+    float tol = math.max(syminfo.mintick * 2.0, EPS * 10.0)
+    bool ok = not na(bestD) and bestD <= tol
+    [ok ? oTop : na, ok ? oBtm : na, ok ? oIdx : na, ok ? oWsig : na]
+// ============================================================================
+
+f_pick_tp(bool isLong, int nMax)=>
+    float best_px   = na
+    float best_z    = na
+    float best_sc   = na
+    float best_hts  = na
+    int   best_dir  = 0
+    int   best_zbin = na
+    int   best_wbin = na
+    bool  best_brk  = false
+
+    float best_top  = na
+    float best_btm  = na
+    int   best_side = 0
+    int   best_idx  = na
+
+    int nBull = array.size(g_bullish)
+    int nBear = array.size(g_bearish)
+
+    if (isLong and nBear == 0) or (not isLong and nBull == 0)
+        [na, na, 0, na, na, na, false, na, na, na, 0, na]
+    else
+        float seed0  = bar_index + (isLong ? 123.0 : 321.0)
+
+        if isLong
+            int limBear = math.min(nBear, nMax)
+            if limBear > 0
+                for i = 0 to limBear - 1
+                    if i >= array.size(g_bearish)
+                        break
+                    w_ob e = array.get(g_bearish, i)
+                    float tgt = e.top
+                    if tgt > close
+                        float z = (tgt - close) / math.max(ate_dev, EPS)
+                        float w = math.max(e.top - e.btm, EPS) / math.max(ate_dev, EPS)
+                        bool  br = e.breaker
+                        int zb = f_bin_idx(z), wb = f_bin_w(w)
+
+                        float sc = na
+                        if use_bandit
+                            [sc_t, _, _, _, _] = f_score_from_bins(z, w, br, zb, wb, seed0 + i, g_srf_p_trend)
+                            sc := sc_t
+                        else
+                            sc := f_score(z)
+
+                        int   ageBars   = na(e.idx) ? 0 : (bar_index - e.idx)
+                        float rng_cand  = nz(e.rng, 0.0)
+                        float bod_cand  = nz(e.bod, 0.0)
+                        float up_wick   = nz(e.up_wick, 0.0)
+                        float dn_wick   = nz(e.dn_wick, 0.0)
+                        float bodyRatio = rng_cand > 0 ? bod_cand / rng_cand : 0.0
+                        float wickSkew  = (up_wick + dn_wick) > 0 ? (up_wick - dn_wick) / (up_wick + dn_wick) : 0.0
+
+                        float hts    = f_hts_score(z, w, br, ageBars, bodyRatio, wickSkew)
+                        float sc_hts = sc * hts
+
+                        if na(best_sc) or sc_hts > best_sc
+                            best_sc   := sc_hts
+                            best_px   := tgt
+                            best_z    := z
+                            best_hts  := hts
+                            best_dir  := +1
+                            best_zbin := zb
+                            best_wbin := wb
+                            best_brk  := br
+                            best_top  := e.top
+                            best_btm  := e.btm
+                            best_side := -1
+                            best_idx  := e.idx
+        else
+            int limBull = math.min(nBull, nMax)
+            if limBull > 0
+                for i = 0 to limBull - 1
+                    if i >= array.size(g_bullish)
+                        break
+                    w_ob e = array.get(g_bullish, i)
+                    float tgt = e.btm
+                    if tgt < close
+                        float z = (close - tgt) / math.max(ate_dev, EPS)
+                        float w = math.max(e.top - e.btm, EPS) / math.max(ate_dev, EPS)
+                        bool  br = e.breaker
+                        int zb = f_bin_idx(z), wb = f_bin_w(w)
+
+                        float sc = na
+                        if use_bandit
+                            [sc_t, _, _, _, _] = f_score_from_bins(z, w, br, zb, wb, seed0 + i, g_srf_p_trend)
+                            sc := sc_t
+                        else
+                            sc := f_score(z)
+
+                        int   ageBars   = na(e.idx) ? 0 : (bar_index - e.idx)
+                        float rng_cand  = nz(e.rng, 0.0)
+                        float bod_cand  = nz(e.bod, 0.0)
+                        float up_wick   = nz(e.up_wick, 0.0)
+                        float dn_wick   = nz(e.dn_wick, 0.0)
+                        float bodyRatio = rng_cand > 0 ? bod_cand / rng_cand : 0.0
+                        float wickSkew  = (up_wick + dn_wick) > 0 ? (up_wick - dn_wick) / (up_wick + dn_wick) : 0.0
+
+                        float hts    = f_hts_score(z, w, br, ageBars, bodyRatio, wickSkew)
+                        float sc_hts = sc * hts
+
+                        if na(best_sc) or sc_hts > best_sc
+                            best_sc   := sc_hts
+                            best_px   := tgt
+                            best_z    := z
+                            best_hts  := hts
+                            best_dir  := -1
+                            best_zbin := zb
+                            best_wbin := wb
+                            best_brk  := br
+                            best_top  := e.top
+                            best_btm  := e.btm
+                            best_side := +1
+                            best_idx  := e.idx
+
+        [best_px, best_z, best_dir, best_sc, best_zbin, best_wbin, best_brk, best_hts, best_top, best_btm, best_side, best_idx]
+
+
+// ANCHOR[ATE:fallback_tp]
+f_pick_tp_with_fallback(bool isLong, int nMax)=>
+    [px, z, dir, sc, _, _, _, _, top, btm, side, idx] = f_pick_tp(isLong, nMax)
+    if not na(px)
+        [px, z, dir, sc, top, btm, side, idx]
+    else
+        float k = 1.5
+        float dev_tgt = isLong ? close + k*ate_dev : close - k*ate_dev
+        float z2 = k
+        // fallback은 zone 메타 없음
+        [dev_tgt, z2, (isLong ? +1 : -1), f_score(k), na, na, 0, na]
+
+// SL 산출
+f_pick_sl(bool isLong, float _ate_dev)=>
+    float slx = na
+    if sl_mode == "PureDev"
+        slx := isLong ? close - sl_k*_ate_dev : close + sl_k*_ate_dev
+    else
+        if isLong
+            float best = na
+            int n = array.size(g_bullish)
+            if n > 0
+                for i = 0 to n-1
+                    w_ob e = array.get(g_bullish, i)
+                    if e.btm <= close and (na(best) or e.btm > best)
+                        best := e.btm
+            slx := na(best) ? close - sl_k*_ate_dev : math.min(best, close - sl_k*_ate_dev)
+        else
+            float best = na
+            int n = array.size(g_bearish)
+            if n > 0
+                for i = 0 to n-1
+                    w_ob e = array.get(g_bearish, i)
+                    if e.top >= close and (na(best) or e.top < best)
+                        best := e.top
+            slx := na(best) ? close + sl_k*_ate_dev : math.max(best, close + sl_k*_ate_dev)
+    slx
+
+
+// 타깃 활성/해제 로직
+//==================================================================================================
+// [PATCH] ATE Core — v6 State Machine 정리본 (resolve → arm 순서)
+// REPLACE: from "// 타깃 활성/해제 로직" down to the END of ANCHOR[ATE:debug_hud] block
+//==================================================================================================
+
+//-------------------------------
+// ATE State Enum (single source)
+//-------------------------------
+const int ATE_IDLE  = 0
+const int ATE_ARMED = 1
+var int g_ate_state = ATE_IDLE
+
+// 상태-동기화(깨진 상태 자동 복구)
+if barstate.isfirst
+    g_ate_state := ATE_IDLE
+else if barstate.isconfirmed and (g_ate_state == ATE_ARMED)
+    if na(g_tp_price) or na(g_tp_start) or (g_tp_dir == 0) or na(g_sl_price)
+        g_ate_state := ATE_IDLE
+
+
+//-------------------------------
+// 타깃 활성/해제 로직(ready/trigger)
+//-------------------------------
+[bos_evt_reg, choch_evt_reg] = f_pick_ms_events(ate_scope_regime)
+bool new_regime = choch_evt_reg or bos_evt_reg
+bool cont_bos   = bos_evt_reg
+[touch_ok, touch_side, touch_top, touch_btm, touch_brk, touch_w, touch_pen] = f_ob_touch(ate_dev, ate_touch_buf_k, ate_touch_scan)
+
+bool wantLong  = (ate_ob_type == 1)
+bool wantShort = (ate_ob_type == -1)
+
+bool touch_match =
+     not ate_touch_dir_filter ? true :
+     wantLong  ? (touch_side == +1) :
+     wantShort ? (touch_side == -1) : true
+
+bool ate_ready = ate_arm_on_touch ? (touch_ok and touch_match) : f_has_ob_candidates()
+
+
+int  warmup_bars = 50
+ate_ready := ate_ready and (bar_index >= warmup_bars)
+// === PATCH[ATE:last_ms_event] ===
+//  1 = BoS continuation, -1 = CHoCH reversal, 0 = none
+var int g_last_ms_evt = 0
+if barstate.isconfirmed
+    if choch_evt_reg
+        g_last_ms_evt := -1
+    else if bos_evt_reg
+        g_last_ms_evt := 1
+    else
+        g_last_ms_evt := 0
+
+
+//-------------------------------
+// 베타 테이블 망각: 주기적으로 (비정상성 대응)
+//-------------------------------
+if use_bandit and (bar_index % decay_period == 0) and barstate.isconfirmed
+    [tt, ttr, tch] = f_decay_betas(g_trials_total, g_trials_trend, g_trials_chop)
+    g_trials_total := tt
+    g_trials_trend := ttr
+    g_trials_chop  := tch
+
+
+
+//-------------------------------
+// (1) Resolve: 기존 타깃 결과 먼저 처리
+//-------------------------------
+bool ate_active = use_ate and (g_ate_state == ATE_ARMED) and not na(g_tp_price) and not na(g_tp_start) and (g_tp_dir != 0) and not na(g_sl_price)
+
+// horizon(유효할 때만 계산) — (B) 모든 hz_adj 보정 후 ate_hz 산출
+float hz_adj_base = f_clamp(0.75 + 0.50 * g_srf_p_trend, 0.75, 1.25)
+float hz_adj = hz_adj_base
+
+// last MS evt 보정(확정 이벤트 기반)
+if g_last_ms_evt == -1
+    hz_adj := hz_adj * 0.85
+else if g_last_ms_evt == 1
+    hz_adj := hz_adj * 1.10
+
+// === PATCH[OBR:horizon_adjust] ===
+// (기본) 터치 존 기반 보정은 유지하되, ACTIVE 상태에서는 "타깃 OB"로도 쓸 수 있게(아래 PATCH[ATE:target_ob_meta]에서 확장)
+if obr_enable and touch_ok and ate_active
+    int dir_ctx = g_tp_dir
+
+    float zTop_ctx = touch_top
+    float zBtm_ctx = touch_btm
+    float pen_ctx  = touch_pen
+
+    if obr_active_use_target_zone and not na(g_tp_ob_top) and not na(g_tp_ob_btm)
+        zTop_ctx := g_tp_ob_top
+        zBtm_ctx := g_tp_ob_btm
+        pen_ctx  := f_zone_pen(zTop_ctx, zBtm_ctx)
+
+    [pb_hz, pr_hz, _, _, _] = f_obr_eval(dir_ctx, zTop_ctx, zBtm_ctx, ate_dev, pen_ctx)
+    float hz_mul = f_clamp(1.0 + obr_hz_k * (pb_hz - pr_hz), 0.75, 1.35)
+    hz_adj := hz_adj * hz_mul
+
+
+int ate_hz = ate_active ? int(math.round(ate_horizon * hz_adj * f_clamp(ta.atr(atr_len_it) / math.max(ate_dev, EPS), 0.75, 1.50))) : na
+
+
+// hit / fail 판정
+bool hit_now  = ate_active and ((g_tp_dir == +1 and high >= g_tp_price) or (g_tp_dir == -1 and low <= g_tp_price))
+bool expired  = ate_active and not na(ate_hz) and ((bar_index - g_tp_start) >= ate_hz)
+bool sl_hit   = ate_active and ((g_tp_dir == +1 and low <= g_sl_price) or (g_tp_dir == -1 and high >= g_sl_price))
+
+// (A) flip 정책: CHOCH만 반영 / 또는 방향 불일치일 때만 flip
+bool choch_evt_only = choch_evt_reg
+bool choch_dir_mismatch = (choch_dir != 0) and (choch_dir != g_tp_dir)
+
+bool regime_flip =
+     ate_active and choch_evt_only and (bar_index > g_tp_start) and
+     (ate_flip_mode == "CHOCH only" ? true : choch_dir_mismatch)
+
+bool fail_dir  = ate_active and (sl_hit or regime_flip)
+bool fail_time = ate_active and expired and not fail_dir
+bool fail_now  = ate_active and (fail_dir or fail_time)
+
+
+
+if barstate.isconfirmed and ate_active
+    // === PATCH[OBR:early_downgrade] ===
+    if obr_enable and touch_ok and ate_active
+        int dir_ctx = g_tp_dir
+        float zTop_ctx = touch_top
+        float zBtm_ctx = touch_btm
+        float pen_ctx  = touch_pen
+
+        // ACTIVE 상태에서는 "타깃으로 잡힌 OB 존"을 동일 컨텍스트로 사용(옵션)
+        if obr_active_use_target_zone and not na(g_tp_ob_top) and not na(g_tp_ob_btm)
+            zTop_ctx := g_tp_ob_top
+            zBtm_ctx := g_tp_ob_btm
+            pen_ctx  := f_zone_pen(zTop_ctx, zBtm_ctx)
+
+        [pb, pr, bconf, rconf, absf] = f_obr_eval(dir_ctx, zTop_ctx, zBtm_ctx, ate_dev, pen_ctx)
+
+
+        // 리젝션 확정(against-dir) 신호면 TP를 "가까운 값"으로 당겨서 조기익절 모드로 전환
+        if rconf
+            float qt = obr_quick_tp_k * math.max(ate_dev, EPS)
+            float new_tp = dir_ctx == 1 ? (close + qt) : (close - qt)
+
+            // 기존 TP보다 “더 가까운” 쪽만 허용
+            if dir_ctx == 1
+                g_tp_price := math.min(g_tp_price, new_tp)
+            else
+                g_tp_price := math.max(g_tp_price, new_tp)
+
+            // 라인도 동기화
+            if not na(g_tp_line)
+                line.set_y1(g_tp_line, g_tp_price)
+                line.set_y2(g_tp_line, g_tp_price)
+            if not na(g_tp_lab)
+                label.set_y(g_tp_lab, g_tp_price)
+                label.set_text(g_tp_lab, "TP•(OBR) z=" + str.tostring(g_tp_z, format.mintick))
+
+    // ---------------------------
+    // SUCCESS
+    // ---------------------------
+    if hit_now
+        // CHOCH-기반 평가 성공 기록
+        if eval_enable and g_ch_eval_active
+            bool  isLong_eval = (g_ch_eval_dir == 1)
+            float R_hit = na
+            if not na(g_ch_eval_entry) and not na(g_ch_eval_tp) and not na(g_ch_eval_sl)
+                R_hit := f_R_multiple(isLong_eval, g_ch_eval_entry, g_ch_eval_tp, g_ch_eval_sl)
+            else
+                R_hit := 1.0
+
+            if isLong_eval
+                g_ch_Rsum_long += R_hit
+                g_ch_Rcnt_long += 1.0
+            else if g_ch_eval_dir == -1
+                g_ch_Rsum_short += R_hit
+                g_ch_Rcnt_short += 1.0
+
+            if not na(g_ch_eval_z)
+                f_update_beta_ch(g_ch_eval_z, true)
+                f_update_beta_ch_shape(g_ch_eval_z, true, g_ch_eval_hts_high)
+
+            // 평가 세션 리셋
+            g_ch_eval_active := false
+            g_ch_eval_entry  := na
+            g_ch_eval_sl     := na
+            g_ch_eval_tp     := na
+            g_ch_eval_dir    := 0
+            g_ch_eval_z      := na
+            g_ch_eval_hts_high  := false
+            g_ch_eval_hts_score := na
+
+        // 컨텍스트 베타 업데이트
+        if use_bandit and not na(g_tp_zbin) and not na(g_tp_wbin)
+            [g_trials_total, g_trials_trend, g_trials_chop] =
+                 f_update_beta3_regime(g_tp_zbin, g_tp_wbin, g_tp_brk, true, g_trials_total, g_trials_trend, g_trials_chop, g_srf_p_trend)
+        else if not na(g_tp_z)
+            f_update_beta(g_tp_z, true)
+
+        // 시각 오브젝트 정리
+        label.new(bar_index, g_tp_price, "TP 🎯",
+                  style=label.style_label_up, color=color.new(color.lime, 0),
+                  textcolor=color.black, size=size.tiny)
+        f_try_delete_line(g_tp_line)
+        f_try_delete_line(g_sl_line)
+        f_try_delete_label(g_tp_lab)
+
+        // 상태 리셋
+        g_tp_price := na
+        g_sl_price := na
+        g_tp_dir   := 0
+        g_tp_start := na
+        g_tp_z     := na
+        g_tp_zbin  := na
+        g_tp_wbin  := na
+        g_tp_brk   := false
+        g_tp_hts_score := na
+        g_tp_hts_high  := false
+
+        g_tp_ob_top  := na
+        g_tp_ob_btm  := na
+        g_tp_ob_idx  := na
+        g_tp_ob_wsig := na
+        g_tp_ob_side := 0
+
+
+
+        g_tp_line := na
+        g_sl_line := na
+        g_tp_lab  := na
+        
+
+        g_ate_state := ATE_IDLE
+
+    // ---------------------------
+    // FAIL (timeout or flip)
+    // ---------------------------
+    else if fail_now
+        float w_fail = fail_time ? ate_timeout_w : 1.0
+
+        // CHOCH-기반 평가 실패 기록
+        if eval_enable and g_ch_eval_active
+            bool  isLong_eval = (g_ch_eval_dir == 1)
+            float R_fail = -1.0
+
+            if isLong_eval
+                g_ch_Rsum_long += R_fail
+                g_ch_Rcnt_long += 1.0
+            else if g_ch_eval_dir == -1
+                g_ch_Rsum_short += R_fail
+                g_ch_Rcnt_short += 1.0
+
+            if eval_enable and g_ch_eval_active and not na(g_ch_eval_z)
+                f_update_beta_ch_w(g_ch_eval_z, false, w_fail)
+                f_update_beta_ch_shape_w(g_ch_eval_z, false, g_ch_eval_hts_high, w_fail)
+
+
+            // 평가 세션 리셋
+            g_ch_eval_active := false
+            g_ch_eval_entry  := na
+            g_ch_eval_sl     := na
+            g_ch_eval_tp     := na
+            g_ch_eval_dir    := 0
+            g_ch_eval_z      := na
+            g_ch_eval_hts_high  := false
+            g_ch_eval_hts_score := na
+
+        // 컨텍스트 베타 업데이트
+        if use_bandit and not na(g_tp_zbin) and not na(g_tp_wbin)
+            [g_trials_total, g_trials_trend, g_trials_chop] =
+                 f_update_beta3_regime(g_tp_zbin, g_tp_wbin, g_tp_brk, false, g_trials_total, g_trials_trend, g_trials_chop, g_srf_p_trend)
+        else if not na(g_tp_z)
+            f_update_beta_w(g_tp_z, false, w_fail)
+
+        label.new(bar_index, g_tp_price,
+                  expired ? "TP ⏰ timeout" : "TP ❌ regime flip",
+                  style=label.style_label_down,
+                  color=color.new(color.orange, 0),
+                  textcolor=color.black, size=size.tiny)
+
+        f_try_delete_line(g_tp_line)
+        f_try_delete_line(g_sl_line)
+        f_try_delete_label(g_tp_lab)
+
+        // 상태 리셋
+        g_tp_price := na
+        g_sl_price := na
+        g_tp_dir   := 0
+        g_tp_start := na
+        g_tp_z     := na
+        g_tp_zbin  := na
+        g_tp_wbin  := na
+        g_tp_brk   := false
+        g_tp_hts_score := na
+        g_tp_hts_high  := false
+
+        g_tp_ob_top  := na
+        g_tp_ob_btm  := na
+        g_tp_ob_idx  := na
+        g_tp_ob_wsig := na
+        g_tp_ob_side := 0
+
+        g_tp_line := na
+        g_sl_line := na
+        g_tp_lab  := na
+
+        g_ate_state := ATE_IDLE
+
+
+// resolve 이후 재계산
+ate_active := use_ate and (g_ate_state == ATE_ARMED) and not na(g_tp_price) and not na(g_tp_start) and (g_tp_dir != 0) and not na(g_sl_price)
+
+
+//-------------------------------
+// (2) Arm: 필요 시 신규 TP/SL 무장
+//-------------------------------
+bool need_new_target = use_ate and ate_ready and (choch_evt_reg or not ate_active)
+
+if barstate.isconfirmed and need_new_target
+    bool wantLong = (ate_ob_type == 1)
+
+    float hts = na
+
+    // 1) 후보 탐색
+    float best_top  = na
+    float best_btm  = na
+    int   best_side = 0
+    int   best_idx  = na
+
+    // (주의) 좌변 갯수/순서는 f_pick_tp 반환과 정확히 일치해야 함
+    [bx, bz, bd, bsc, zb, wb, br, hts_tmp, _best_top, _best_btm, _best_side, _best_idx] = f_pick_tp(wantLong, ate_candidates)
+
+    // --- 기존 변수는 개별 재할당
+    hts      := hts_tmp
+    best_top := _best_top
+    best_btm := _best_btm
+    best_side:= _best_side
+    best_idx := _best_idx
+
+    // 2) 후보 없으면 fallback
+    if na(bx)
+        [bx, bz, bd, bsc, best_top, best_btm, best_side, best_idx] = f_pick_tp_with_fallback(wantLong, ate_candidates)
+
+        zb := f_bin_idx(bz)
+        wb := f_bin_w(1.0)
+        br := false
+        hts := na
+
+    // 3) 현재 컨텍스트에서 컷 계산
+    // p_arm: (Bandit ON) 컨텍스트 p_hat / (OFF) 1D beta p(z)
+    float p_arm = na(bz) ? na :
+         (use_bandit ? f_prob_from_beta3(zb, wb, br, g_srf_p_trend) : f_prob_from_beta(bz))
+
+    // cut_arm: (Bandit ON) β3 학습량(a+b) 기반 / (OFF) 1D beta 기반
+    float cut_arm = na(bz) ? 0.0 : f_arm_cut(use_bandit, bz, zb, wb, br, g_srf_p_trend)
+
+    // SRF(횡보) 가산 컷(기존 유지)
+    cut_arm += f_srf_gate(g_srf_p_trend)
+
+    // CHoCH 직후/BoS 보정(기존 로직 유지)
+    if g_last_ms_evt == -1
+        cut_arm := math.max(cut_arm, 0.60)
+    else if g_last_ms_evt == 1
+        cut_arm := math.max(0.40, cut_arm - 0.03)
+
+    // === PATCH[OBR:arm_gate] ===
+    if obr_enable and touch_ok and (g_last_ms_evt != 0 or ate_arm_on_touch)
+        int dir_ctx = wantLong ? 1 : -1
+        [pb, pr, bconf, rconf, absf] = f_obr_eval(dir_ctx, touch_top, touch_btm, ate_dev, touch_pen)
+        float adj = f_clamp((pr - pb) * obr_gate_k, -0.15, 0.15)
+        cut_arm := f_clamp(cut_arm + adj, 0.40, 0.90)
+
+    // CHOCH-조건부 기대수익 기반 추가 게이트
+    if eval_enable and not na(bz)
+        float ER = f_ch_expected_R(wantLong, bz)
+        if not na(ER)
+            if ER <= 0.0
+                cut_arm := math.max(cut_arm, 0.70)
+            else if ER < 0.50
+                cut_arm := math.max(cut_arm, 0.60)
+
+    // HTS shape-aware 컷 완화 (조건부)
+    bool htsHigh_cand = not na(hts) and not na(g_hts_q80) and hts >= g_hts_q80
+    if eval_enable and not na(bz) and htsHigh_cand
+        float p_ch_shape = f_prob_from_beta_ch_shape(bz, true)
+        int   j_bin      = f_bin_idx(bz)
+        float n_high     = array.get(g_beta_ch_high_a, j_bin) + array.get(g_beta_ch_high_b, j_bin)
+        if n_high > 10 and p_ch_shape >= 0.50
+            cut_arm := math.max(0.40, cut_arm - 0.05)
+
+    // 최종 arm 판정 (컷 보정이 끝난 뒤에 계산해야 정합)
+    bool ok_arm = not na(p_arm) and (p_arm >= cut_arm)
+
+
+    // 4) 무장 or 해제
+    if not na(bx) and ok_arm
+        // 이전 오브젝트 정리
+        f_try_delete_line(g_tp_line)
+        f_try_delete_line(g_sl_line)
+        f_try_delete_label(g_tp_lab)
+
+        // 상태 저장
+        g_tp_price := bx
+        g_tp_z     := bz
+        g_tp_dir   := bd
+        g_tp_start := bar_index
+        g_tp_zbin  := zb
+        g_tp_wbin  := wb
+        g_tp_brk   := br
+
+        // === PATCH[C] / PATCH[ATE:store_target_ob_meta] =========================
+        // only trust meta when candidate actually came from OB list (fallback sets hts=na)
+        float mTop  = na
+        float mBtm  = na
+        int   mIdx  = na
+        float mWsig = na
+        if not na(hts)
+            [mTop, mBtm, mIdx, mWsig] = f_ate_find_target_ob_meta(wantLong, g_tp_price, ate_dev, ate_candidates)
+        // === PATCH[ATE:store_target_ob_meta] ===
+        g_tp_ob_top  := best_top
+        g_tp_ob_btm  := best_btm
+        g_tp_ob_side := best_side
+        g_tp_ob_idx  := best_idx
+        g_tp_ob_wsig := (not na(best_top) and not na(best_btm)) ? (math.max(best_top - best_btm, EPS) / math.max(ate_dev, EPS)) : na
+
+        // =========================================================================
+
+        // 동적 SL
+        float kfac = f_dyn_sl_factor(wantLong, ate_dev)
+        float base = f_pick_sl(wantLong, ate_dev)
+        g_sl_price := na(base) ? na : (wantLong ? close - kfac*(close - base) : close + kfac*(base - close))
+
+        // 시각화
+        g_tp_line := line.new(bar_index, g_tp_price, bar_index + 1, g_tp_price,
+                            extend=extend.right, color=color.new(color.aqua, 0))
+        g_sl_line := line.new(bar_index, g_sl_price,  bar_index + 1, g_sl_price,
+                            extend=extend.right, color=color.new(color.red, 0))
+        g_tp_lab  := label.new(bar_index, g_tp_price,
+                            "TP•z=" + str.tostring(g_tp_z, format.mintick),
+                            style=label.style_label_left,
+                            color=color.new(color.aqua, 0),
+                            textcolor=color.black,
+                            size=size.tiny)
+
+        // HTS-score 상태 저장 + 온라인 분위 업데이트
+        g_tp_hts_score := hts
+        if not na(hts)
+            float h_ind = (hts > g_hts_q80) ? 1.0 : 0.0
+            g_hts_q80 := f_clamp(g_hts_q80 + HTS_Q_ALPHA * (h_ind - 0.20), 0.0, 1.0)
+        g_tp_hts_high := not na(hts) and (hts >= g_hts_q80)
+
+        g_ate_state := ATE_ARMED
+    else
+        // 무장 실패 → 완전 해제
+        g_tp_price := na
+        g_sl_price := na
+        g_tp_dir   := 0
+        g_tp_start := na
+        g_tp_z     := na
+        g_tp_zbin  := na
+        g_tp_wbin  := na
+        g_tp_brk   := false
+        g_tp_hts_score := na
+        g_tp_hts_high  := false
+
+        // === PATCH[C] / PATCH[ATE:store_target_ob_meta] =========================
+        g_tp_ob_top  := na
+        g_tp_ob_btm  := na
+        g_tp_ob_idx  := na
+        g_tp_ob_wsig := na
+        g_tp_ob_side := 0
+
+        // =========================================================================
+
+        f_try_delete_line(g_tp_line)
+        f_try_delete_line(g_sl_line)
+        f_try_delete_label(g_tp_lab)
+        g_tp_line := na
+        g_sl_line := na
+        g_tp_lab  := na
+
+        g_ate_state := ATE_IDLE
+
+
+//-------------------------------
+// CHOCH 평가 세션: TP/SL이 “존재하는 시점” 기준으로 arm
+//-------------------------------
+if eval_enable and choch_conf_now and not g_ch_eval_active and use_ate and (g_ate_state == ATE_ARMED) and not na(g_tp_price) and (g_tp_dir != 0) and not na(g_sl_price)
+    g_ch_eval_active := true
+    g_ch_eval_entry  := close
+    g_ch_eval_sl     := g_sl_price
+    g_ch_eval_tp     := g_tp_price
+    g_ch_eval_dir    := g_tp_dir
+    g_ch_eval_z      := g_tp_z
+    g_ch_eval_hts_high  := g_tp_hts_high
+    g_ch_eval_hts_score := g_tp_hts_score
+
+
+// ================================================================================================
+// ANCHOR[ATE:debug_hud]
+//  - debug 도 state 기반으로 정합성 맞춤
+// ================================================================================================
+var label g_dbg = na
+
+int   nBull_dbg = array.size(g_bullish)
+int   nBear_dbg = array.size(g_bearish)
+
+bool  dbg_active = use_ate and (g_ate_state == ATE_ARMED) and not na(g_tp_price) and not na(g_tp_start) and (g_tp_dir != 0)
+
+float pnow_dbg = na
+if use_bandit and not na(g_tp_zbin) and not na(g_tp_wbin)
+    pnow_dbg := f_prob_from_beta3(g_tp_zbin, g_tp_wbin, g_tp_brk, g_srf_p_trend)
+else if not na(g_tp_z)
+    pnow_dbg := f_prob_from_beta(g_tp_z)
+
+float dbg_cut = na
+
+if use_bandit and not na(g_tp_zbin) and not na(g_tp_wbin) and not na(g_tp_z)
+    dbg_cut := f_arm_cut(true, g_tp_z, g_tp_zbin, g_tp_wbin, g_tp_brk, g_srf_p_trend)
+else if not na(g_tp_z)
+    dbg_cut := f_effective_min_cut(g_tp_z)
+
+// 표시 안정성(na 방지) + SRF 가산컷(arm 로직과 동일 컨벤션)
+dbg_cut := na(dbg_cut) ? ate_min_p : dbg_cut
+dbg_cut += f_srf_gate(g_srf_p_trend)
+
+
+float p_ch_dbg = na
+if eval_enable and not na(g_tp_z)
+    p_ch_dbg := f_prob_from_beta_ch(g_tp_z)
+
+float R_long_avg  = g_ch_Rsum_long  / math.max(g_ch_Rcnt_long,  1.0)
+float R_short_avg = g_ch_Rsum_short / math.max(g_ch_Rcnt_short, 1.0)
+
+float ER_dbg = na
+if eval_enable and not na(g_tp_z) and (g_tp_dir != 0)
+    bool isLong_dbg = (g_tp_dir == 1)
+    ER_dbg := f_ch_expected_R(isLong_dbg, g_tp_z)
+
+string msg_top =
+     "ATE debug"
+  + "\nstate=" + (g_ate_state == ATE_ARMED ? "ARMED" : "IDLE")
+  + "\nready=" + str.tostring(ate_ready)
+  + "  new_regime=" + str.tostring(new_regime)
+  + "\nOBs  bull=" + str.tostring(nBull_dbg) + " bear=" + str.tostring(nBear_dbg)
+  + "\np(trend)=" + str.tostring(g_srf_p_trend, "#.000")
+  + "  cut=" + str.tostring(dbg_cut, "#.000")
+
+string msg_mid =
+     "\np(now)=" + (na(pnow_dbg) ? "na" : str.tostring(pnow_dbg, "#.000"))
+  + "\nTP=" + (na(g_tp_price) ? "na" : str.tostring(g_tp_price))
+  + "  SL=" + (na(g_sl_price) ? "na" : str.tostring(g_sl_price))
+
+string msg_tail =
+     "\nBandit=" + (use_bandit ? bandit_mode : "off")
+  + "  γ=" + str.tostring(gamma_decay, "#.###")
+  + "  trials=" + str.tostring(g_trials_total, "#")
+  + "\nCHOCH p(hit)=" + (na(p_ch_dbg) ? "na" : str.tostring(p_ch_dbg, "#.000"))
+  + "  R_L=" + str.tostring(R_long_avg,  "#.00")
+  + "  R_S=" + str.tostring(R_short_avg, "#.00")
+  + "  ER="  + (na(ER_dbg) ? "na" : str.tostring(ER_dbg, "#.00"))
+  + "\nHTS q80=" + str.tostring(g_hts_q80, "#.00")
+  + "  HTS_high=" + str.tostring(g_tp_hts_high)
+
+string msg_ob =
+     "\nOBmeta top=" + (na(g_tp_ob_top) ? "na" : str.tostring(g_tp_ob_top))
+  + " btm=" + (na(g_tp_ob_btm) ? "na" : str.tostring(g_tp_ob_btm))
+  + " wσ="  + (na(g_tp_ob_wsig) ? "na" : str.tostring(g_tp_ob_wsig, "#.00"))
+  + " age=" + (na(g_tp_ob_idx) ? "na" : str.tostring(bar_index - g_tp_ob_idx))
+
+string msg = msg_top + msg_mid + msg_ob + msg_tail
+
+
+if barstate.islast
+    if not na(g_dbg)
+        label.delete(g_dbg)
+    g_dbg := label.new(bar_index, high, msg, xloc=xloc.bar_index,
+                       style=label.style_label_left,
+                       textcolor=color.white,
+                       color=color.new(color.black, 0),
+                       size=size.tiny)
